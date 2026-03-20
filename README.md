@@ -2,6 +2,25 @@
 
 > Model Aircraft Flight Calculator & Weather Tracker for hobbyist pilots
 
+[![Deploy](https://github.com/sam-black007/aerocheck/actions/workflows/deploy.yml/badge.svg)](https://github.com/sam-black007/aerocheck/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+## 🚀 Live Demo
+
+**Live Website:** https://sam-black007.github.io/aerocheck/
+
+## 🤖 Powered by Claude Code + ECC
+
+Built with [Everything Claude Code (ECC)](https://github.com/affaan-m/everything-claude-code) - Enhanced AI-powered development workflow.
+
+### ECC Commands Used:
+- `/plan` - Implementation planning
+- `/tdd` - Test-driven development
+- `/code-review` - Code quality assurance
+- `/security` - Security auditing
+
+---
+
 ## Features
 
 ### 1. Flight Calculator
@@ -73,7 +92,9 @@
 ### Installation
 
 ```bash
-cd D:\aerocheck
+# Clone the repository
+git clone https://github.com/sam-black007/aerocheck.git
+cd aerocheck
 
 # Install dependencies
 npm install
@@ -124,28 +145,12 @@ See [API_KEYS.md](API_KEYS.md) for detailed setup instructions.
 aerocheck/
 ├── src/
 │   ├── pages/           # Page components
-│   │   ├── Dashboard.tsx
-│   │   ├── Calculator.tsx
-│   │   ├── Simulator.tsx
-│   │   ├── Weather.tsx
-│   │   ├── Flights.tsx
-│   │   ├── Models.tsx
-│   │   ├── Analytics.tsx
-│   │   ├── Compare.tsx
-│   │   └── Settings.tsx
 │   ├── lib/            # Utility functions
-│   │   ├── calculations.ts       # Basic flight physics
-│   │   ├── advanced-physics.ts   # Advanced physics engine
-│   │   ├── aircraft-types.ts     # Aircraft type configs
-│   │   ├── db.ts                # IndexedDB operations
-│   │   ├── weather.ts           # Weather utilities
-│   │   ├── apis.ts             # General API integrations
-│   │   ├── weather-apis.ts      # Aviation weather APIs
-│   │   └── flight-tracker.ts    # GPS flight tracking
 │   ├── types/          # TypeScript types
 │   ├── __tests__/     # Test files
 │   └── App.tsx        # Main app component
 ├── public/
+├── .opencode/         # ECC configuration
 ├── ROADMAP.md         # Feature roadmap
 ├── API_KEYS.md        # API setup guide
 └── package.json
@@ -186,6 +191,7 @@ MIT License
 
 ## Acknowledgments
 
+- [Everything Claude Code (ECC)](https://github.com/affaan-m/everything-claude-code) - AI development workflow
 - Weather data from OpenWeatherMap, WeatherAPI, AVWX
 - Aviation data from Aviationstack, AeroDataBox
 - Air quality data from OpenAQ
