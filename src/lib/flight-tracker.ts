@@ -289,7 +289,7 @@ export interface FlightAnalytics {
   longestFlight: FlightSession | null;
   highestAltitude: number;
   fastestSpeed: number;
-  most flown aircraft: string;
+  mostFlownAircraft: string;
   flightsThisMonth: number;
   favoriteLocation: { lat: number; lon: number; count: number } | null;
 }
@@ -308,7 +308,7 @@ export async function calculateAnalytics(): Promise<FlightAnalytics> {
       longestFlight: null,
       highestAltitude: 0,
       fastestSpeed: 0,
-      most flown aircraft: '',
+      mostFlownAircraft: '',
       flightsThisMonth: 0,
       favoriteLocation: null,
     };
@@ -360,7 +360,7 @@ export async function calculateAnalytics(): Promise<FlightAnalytics> {
     longestFlight,
     highestAltitude,
     fastestSpeed: Math.round(fastestSpeed),
-    most flown aircraft: mostFlownAircraft,
+    mostFlownAircraft,
     flightsThisMonth,
     favoriteLocation: null, // Would require clustering
   };
