@@ -1,11 +1,11 @@
-import type { Aircraft, AircraftType } from '../types';
+import type { AircraftType } from '../types';
 
 // Extended aircraft types with physics properties
 export interface AircraftTypeConfig {
   type: AircraftType;
   label: string;
   icon: string;
-  category: 'fixed-wing' | 'rotor' | '特种';
+  category: 'fixed-wing' | 'rotor' | 'special';
   defaultSpecs: {
     wingspan: number;
     wingArea: number;
@@ -25,7 +25,7 @@ export interface AircraftTypeConfig {
   };
 }
 
-export const AIRCRAFT_CONFIGS: Record<AircraftType, AircraftTypeConfig> = {
+export const AIRCRAFT_CONFIGS: Record<string, AircraftTypeConfig> = {
   'fixed-wing': {
     type: 'fixed-wing',
     label: 'Fixed Wing',
@@ -415,6 +415,6 @@ export function getAircraftConfig(type: AircraftType): AircraftTypeConfig {
 }
 
 // Get aircraft by category
-export function getAircraftByCategory(category: 'fixed-wing' | 'rotor' | '特种'): AircraftTypeConfig[] {
+export function getAircraftByCategory(category: string): AircraftTypeConfig[] {
   return ALL_AIRCRAFT_TYPES.filter(t => t.category === category);
 }

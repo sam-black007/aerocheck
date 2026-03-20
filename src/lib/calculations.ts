@@ -137,7 +137,7 @@ export function calculateSuitabilityScore(
   }
   
   // Temperature
-  if (temperature >= 10 && temperature <= 35) {
+  if (weather.temperature >= 10 && weather.temperature <= 35) {
     score += 10;
   } else {
     warnings.push('Temperature outside optimal range');
