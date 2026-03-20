@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusSeries, Legend } from 'recharts';
-import { Plane, ArrowRight, Scale, Zap, Gauge, Timer } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { Plane, Scale, Zap, Gauge } from 'lucide-react';
 import { getAllAircraft } from '../lib/db';
 import { calculateSuitabilityScore } from '../lib/calculations';
 import { calculateAdvancedPhysics } from '../lib/advanced-physics';

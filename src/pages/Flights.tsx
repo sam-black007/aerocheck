@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Plus, Plane, Calendar, Clock, MapPin, Star, Trash2, Edit2, X } from 'lucide-react';
 import { getAllFlights, getAllAircraft, saveFlight, deleteFlight } from '../lib/db';
-import { generateFlightId, getDefaultWeather } from '../lib/calculations';
+import { generateFlightId } from '../lib/calculations';
+import { getDefaultWeather } from '../lib/weather';
 import type { FlightLog, Aircraft } from '../types';
 
 export default function FlightsPage() {

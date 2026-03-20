@@ -114,6 +114,56 @@ export const AIRCRAFT_DEFAULTS: Record<AircraftType, Partial<Aircraft>> = {
     wingArea: 0,
     weight: 500,
   },
+  'sailplane': {
+    wingspan: 72,
+    wingArea: 400,
+    weight: 600,
+  },
+  'deltawing': {
+    wingspan: 36,
+    wingArea: 250,
+    weight: 900,
+  },
+  'biplane': {
+    wingspan: 42,
+    wingArea: 350,
+    weight: 1400,
+  },
+  'flyingwing': {
+    wingspan: 54,
+    wingArea: 280,
+    weight: 700,
+  },
+  'parkflyer': {
+    wingspan: 36,
+    wingArea: 200,
+    weight: 400,
+  },
+  'warbird': {
+    wingspan: 52,
+    wingArea: 320,
+    weight: 1800,
+  },
+  'jet': {
+    wingspan: 44,
+    wingArea: 280,
+    weight: 2500,
+  },
+  'tricopter': {
+    wingspan: 18,
+    wingArea: 0,
+    weight: 400,
+  },
+  'octocopter': {
+    wingspan: 40,
+    wingArea: 0,
+    weight: 3000,
+  },
+  'hotairballoon': {
+    wingspan: 0,
+    wingArea: 0,
+    weight: 500,
+  },
 };
 
 export const WEATHER_ICONS: Record<string, string> = {
