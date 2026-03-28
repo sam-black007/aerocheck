@@ -721,7 +721,6 @@ export default function FlightsPage() {
             </div>
           </div>
         </div>
-      </div>
 
       {showAddForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm">
