@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   AlertTriangle,
   Cloud,
+  Compass,
   Droplets,
   Eye,
   Gauge,
@@ -11,10 +12,19 @@ import {
   Sun,
   Wind,
 } from 'lucide-react';
+import OperationsMap from '../components/OperationsMap';
 import { getAQIDescription } from '../lib/apis';
+import { readCachedCurrentLocation, requestCurrentLocation } from '../lib/current-location';
 import { getSettings } from '../lib/db';
-import { fetchLocationBriefing, type WeatherBriefing } from '../lib/live-weather';
+import { fetchTrafficByCoordinates, type LiveTrafficSnapshot } from '../lib/live-traffic';
+import {
+  fetchLocationBriefing,
+  fetchLocationBriefingByCoordinates,
+  type WeatherBriefing,
+} from '../lib/live-weather';
 import { getDefaultWeather, getWeatherIcon, getWindDirectionName } from '../lib/weather';
+
+const WEATHER_SCOPE_NM = 35;
 
 function formatShortDateTime(value?: string | null): string {
   if (!value) {
@@ -38,7 +48,7 @@ function getOperationalVerdict(briefing: WeatherBriefing | null) {
     return {
       label: 'Hold',
       badgeClass: 'badge-danger',
-      summary: 'Conditions are active enough that short, conservative operations are the safer choice.',
+      summary: 'Wind, visibility, or active alerts are strong enough that short and conservative operations are the safer call.',
     };
   }
 
@@ -46,14 +56,14 @@ function getOperationalVerdict(briefing: WeatherBriefing | null) {
     return {
       label: 'Caution',
       badgeClass: 'badge-warning',
-      summary: 'The field is workable, but wind, ceiling, or moisture deserve a tighter flight plan.',
+      summary: 'The field is usable, but it rewards tighter flight planning and more stable aircraft choices.',
     };
   }
 
   return {
     label: 'Go',
     badgeClass: 'badge-success',
-    summary: 'Surface wind, visibility, and alerts look supportive for normal hobby flying.',
+    summary: 'Wind, visibility, and precipitation look supportive for a normal hobby flying session.',
   };
 }
 
@@ -67,31 +77,115 @@ function formatDayLength(seconds?: number | null): string {
   return `${hours}h ${minutes}m`;
 }
 
+type LocationMode = 'current' | 'saved' | 'search';
+
 export default function WeatherPage() {
   const [searchLocation, setSearchLocation] = useState('');
   const [briefing, setBriefing] = useState<WeatherBriefing | null>(null);
+  const [trafficSnapshot, setTrafficSnapshot] = useState<LiveTrafficSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [locationAccuracy, setLocationAccuracy] = useState<number | null>(null);
+  const [locationMode, setLocationMode] = useState<LocationMode>('saved');
 
   useEffect(() => {
     void loadInitialLocation();
   }, []);
 
-  async function loadInitialLocation() {
+  async function refreshSupportingTraffic(nextBriefing: WeatherBriefing) {
+    try {
+      const nextTraffic = await fetchTrafficByCoordinates(nextBriefing.location, WEATHER_SCOPE_NM);
+      setTrafficSnapshot(nextTraffic);
+    } catch (trafficError) {
+      console.error('Nearby traffic lookup failed', trafficError);
+      setTrafficSnapshot(null);
+    }
+  }
+
+  function stampRefresh() {
+    setLastUpdated(
+      new Date().toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    );
+  }
+
+  async function loadSavedLocation() {
     try {
       const settings = await getSettings();
       const defaultLocation = settings?.defaultLocation?.trim() || 'New York, NY';
       setSearchLocation(defaultLocation);
-      await handleSearch(defaultLocation);
+      await handleSearch(defaultLocation, 'saved');
     } catch (loadError) {
-      console.error('Failed to load initial weather location', loadError);
+      console.error('Failed to load saved weather location', loadError);
       setSearchLocation('New York, NY');
-      await handleSearch('New York, NY');
+      await handleSearch('New York, NY', 'saved');
     }
   }
 
-  async function handleSearch(rawQuery = searchLocation) {
+  async function loadInitialLocation() {
+    const cachedLocation = readCachedCurrentLocation();
+    if (cachedLocation) {
+      setLocationAccuracy(cachedLocation.accuracy);
+      const loadedFromCache = await loadByCoordinates(cachedLocation.lat, cachedLocation.lon, 'current');
+      if (loadedFromCache) {
+        return;
+      }
+    }
+
+    const located = await handleUseCurrentLocation(true);
+    if (!located) {
+      await loadSavedLocation();
+    }
+  }
+
+  async function loadByCoordinates(lat: number, lon: number, mode: LocationMode) {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const nextBriefing = await fetchLocationBriefingByCoordinates(lat, lon);
+      setBriefing(nextBriefing);
+      setSearchLocation(nextBriefing.location.name);
+      setLocationMode(mode);
+      stampRefresh();
+      await refreshSupportingTraffic(nextBriefing);
+      return true;
+    } catch (loadError) {
+      console.error('Coordinate weather lookup failed', loadError);
+      setError('The current-location weather brief could not be loaded.');
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleUseCurrentLocation(silentOnError = false) {
+    setLocating(true);
+
+    if (!silentOnError) {
+      setError(null);
+    }
+
+    try {
+      const currentLocation = await requestCurrentLocation();
+      setLocationAccuracy(currentLocation.accuracy);
+      return loadByCoordinates(currentLocation.lat, currentLocation.lon, 'current');
+    } catch (locationError) {
+      console.error('Current location lookup failed', locationError);
+      if (!silentOnError) {
+        setError(locationError instanceof Error ? locationError.message : 'The browser location could not be used.');
+      }
+      return false;
+    } finally {
+      setLocating(false);
+    }
+  }
+
+  async function handleSearch(rawQuery = searchLocation, mode: LocationMode = 'search') {
     const query = rawQuery.trim();
     if (!query) {
       setError('Enter a city, airport, or field name to build a weather brief.');
@@ -104,12 +198,11 @@ export default function WeatherPage() {
     try {
       const nextBriefing = await fetchLocationBriefing(query);
       setBriefing(nextBriefing);
-      setLastUpdated(
-        new Date().toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-        })
-      );
+      setSearchLocation(nextBriefing.location.name);
+      setLocationMode(mode);
+      setLocationAccuracy(null);
+      stampRefresh();
+      await refreshSupportingTraffic(nextBriefing);
     } catch (searchError) {
       console.error('Weather search failed', searchError);
       setError('The weather brief could not be loaded for that search.');
@@ -123,28 +216,33 @@ export default function WeatherPage() {
   const sunTimes = briefing?.sunTimes ?? null;
   const verdict = getOperationalVerdict(briefing);
   const aqiInfo = airQuality ? getAQIDescription(airQuality.aqi) : null;
+  const airborneFlights = trafficSnapshot?.flights.filter((flight) => !flight.isOnGround) ?? [];
+  const nearestFlight = trafficSnapshot?.flights[0] ?? null;
 
   return (
     <div className="space-y-6 animate-fade-in">
       <section className="hero-panel px-6 py-7 lg:px-8">
-        <div className="grid gap-6 xl:grid-cols-[1.2fr,0.8fr]">
+        <div className="grid gap-6 xl:grid-cols-[0.95fr,1.05fr]">
           <div>
-            <div className="section-kicker">Weather brief</div>
+            <div className="section-kicker">Current location weather</div>
             <h1 className="mt-3 font-display text-4xl font-semibold uppercase tracking-[0.12em] text-white">
-              Launch Window
+              Live Field Map
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300">
-              Pull a live field briefing with station observations, air quality, solar timing, and operational cues for your next RC sortie.
+              Open the brief on your exact spot, keep the weather tied to that point on the map, and see nearby traffic context around the field before you launch.
             </p>
 
             <div className="mt-6 flex flex-wrap gap-2">
               <span className="data-chip">{briefing?.source || 'Live weather source'}</span>
               {briefing?.stationId && <span className="data-chip">Station {briefing.stationId}</span>}
               {lastUpdated && <span className="data-chip">Refreshed {lastUpdated}</span>}
+              <span className={locationMode === 'current' ? 'badge-success' : locationMode === 'saved' ? 'badge-info' : 'badge-warning'}>
+                {locationMode === 'current' ? 'Current location' : locationMode === 'saved' ? 'Saved location' : 'Search location'}
+              </span>
             </div>
 
-            <div className="mt-6 flex flex-col gap-4 md:flex-row">
-              <div className="relative flex-1">
+            <div className="mt-6 space-y-4">
+              <div className="relative">
                 <MapPin className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" />
                 <input
                   type="text"
@@ -155,9 +253,19 @@ export default function WeatherPage() {
                   onKeyDown={(event) => event.key === 'Enter' && void handleSearch()}
                 />
               </div>
-              <button className="btn-primary min-w-[10rem]" onClick={() => void handleSearch()} disabled={loading}>
-                {loading ? 'Building brief...' : 'Refresh Brief'}
-              </button>
+
+              <div className="flex flex-col gap-3 md:flex-row">
+                <button className="btn-primary min-w-[12rem]" onClick={() => void handleSearch()} disabled={loading}>
+                  {loading ? 'Building brief...' : 'Refresh brief'}
+                </button>
+                <button
+                  className="btn-secondary min-w-[12rem]"
+                  onClick={() => void handleUseCurrentLocation()}
+                  disabled={locating || loading}
+                >
+                  {locating ? 'Finding position...' : 'Use my location'}
+                </button>
+              </div>
             </div>
 
             {error && <p className="mt-4 text-sm text-red-300">{error}</p>}
@@ -171,39 +279,133 @@ export default function WeatherPage() {
                 <span className="text-slate-500">
                   {briefing.location.lat.toFixed(4)}, {briefing.location.lon.toFixed(4)}
                 </span>
-                <span className="text-slate-500">{briefing.sourceDetail}</span>
+                {locationAccuracy != null && <span className="text-slate-500">Accuracy about {locationAccuracy} m</span>}
               </div>
             )}
           </div>
 
-          <div className="card p-6">
-            <div className="flex items-start justify-between gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="metric-tile sm:col-span-2">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="section-kicker">Surface outlook</div>
+                  <div className="mt-3 text-5xl">{getWeatherIcon(weather)}</div>
+                </div>
+                <span className={verdict.badgeClass}>{verdict.label}</span>
+              </div>
+              <div className="mt-5 text-5xl font-bold text-white">{weather.temperature} deg C</div>
+              <p className="mt-2 text-base text-slate-300">{weather.description}</p>
+              <p className="mt-4 text-sm leading-7 text-slate-400">{verdict.summary}</p>
+            </div>
+
+            <div className="metric-tile">
+              <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Wind</div>
+              <div className="mt-2 font-mono text-3xl text-sky-200">{weather.windSpeed} mph</div>
+              <div className="mt-1 text-xs text-slate-400">{getWindDirectionName(weather.windDirection)}</div>
+            </div>
+
+            <div className="metric-tile">
+              <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Visibility</div>
+              <div className="mt-2 font-mono text-3xl text-emerald-200">{weather.visibility} km</div>
+              <div className="mt-1 text-xs text-slate-400">Ceiling {weather.cloudCeiling} ft</div>
+            </div>
+
+            <div className="metric-tile">
+              <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Nearby traffic</div>
+              <div className="mt-2 font-mono text-3xl text-white">{trafficSnapshot?.flights.length ?? 0}</div>
+              <div className="mt-1 text-xs text-slate-400">{airborneFlights.length} airborne targets in scope</div>
+            </div>
+
+            <div className="metric-tile">
+              <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Observed</div>
+              <div className="mt-2 font-mono text-lg text-white">
+                {briefing ? formatShortDateTime(briefing.observedAt) : 'Awaiting live source'}
+              </div>
+              <div className="mt-1 text-xs text-slate-400">{briefing?.sourceDetail || 'Point-linked briefing'}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-6 xl:grid-cols-[1.12fr,0.88fr]">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="section-kicker">Current surface picture</div>
-                <div className="mt-3 text-5xl">{getWeatherIcon(weather)}</div>
+                <div className="section-kicker">Map-centered briefing</div>
+                <h2 className="mt-2 text-2xl font-semibold text-white">Current Position Map</h2>
               </div>
-              <span className={`self-start ${verdict.badgeClass}`}>{verdict.label}</span>
+              <div className="text-right text-xs uppercase tracking-[0.22em] text-slate-500">{WEATHER_SCOPE_NM} nm airspace overlay</div>
             </div>
 
-            <div className="mt-6 text-5xl font-bold text-white">{weather.temperature} deg C</div>
-            <p className="mt-2 text-base text-slate-300">{weather.description}</p>
-            <p className="mt-4 text-sm leading-7 text-slate-400">{verdict.summary}</p>
+            <OperationsMap
+              center={briefing?.location ?? null}
+              flights={trafficSnapshot?.flights ?? []}
+              radiusNm={WEATHER_SCOPE_NM}
+              weatherSummary={{
+                description: weather.description,
+                temperature: weather.temperature,
+                visibility: weather.visibility,
+                windSpeed: weather.windSpeed,
+              }}
+            />
+          </div>
 
-            <div className="mt-6 grid grid-cols-2 gap-3">
-              <div className="metric-tile">
-                <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Wind</div>
-                <div className="mt-2 font-mono text-2xl text-sky-200">{weather.windSpeed} mph</div>
-                <div className="mt-1 text-xs text-slate-400">{getWindDirectionName(weather.windDirection)}</div>
+          <div className="space-y-4">
+            <div className="card p-5">
+              <div className="mb-4 flex items-center gap-3">
+                <Compass className="h-5 w-5 text-sky-300" />
+                <h2 className="text-xl font-semibold text-white">Point Summary</h2>
               </div>
-              <div className="metric-tile">
-                <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Visibility</div>
-                <div className="mt-2 font-mono text-2xl text-emerald-200">{weather.visibility} km</div>
-                <div className="mt-1 text-xs text-slate-400">Ceiling {weather.cloudCeiling} ft</div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="metric-tile">
+                  <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Humidity</div>
+                  <div className="mt-2 font-mono text-2xl text-white">{weather.humidity}%</div>
+                </div>
+                <div className="metric-tile">
+                  <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Pressure</div>
+                  <div className="mt-2 font-mono text-2xl text-white">{weather.pressure} hPa</div>
+                </div>
+                <div className="metric-tile">
+                  <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Precipitation</div>
+                  <div className="mt-2 font-mono text-2xl text-white">{weather.precipitation} mm</div>
+                </div>
+                <div className="metric-tile">
+                  <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Cloud base</div>
+                  <div className="mt-2 font-mono text-2xl text-white">{weather.cloudCeiling} ft</div>
+                </div>
               </div>
             </div>
 
-            <div className="mt-5 text-xs uppercase tracking-[0.24em] text-slate-500">
-              Observation time: {briefing ? formatShortDateTime(briefing.observedAt) : 'Awaiting live source'}
+            <div className="card p-5">
+              <div className="mb-4 flex items-center gap-3">
+                <Plane className="h-5 w-5 text-sky-300" />
+                <h2 className="text-xl font-semibold text-white">Nearby Airspace</h2>
+              </div>
+
+              {nearestFlight ? (
+                <div className="space-y-3">
+                  <div className="metric-tile">
+                    <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Closest target</div>
+                    <div className="mt-2 text-2xl font-semibold text-white">{nearestFlight.callsign}</div>
+                    <div className="mt-1 text-sm text-slate-400">
+                      {nearestFlight.distanceNm} nm | {nearestFlight.altitudeFeet == null ? 'Ground' : `${nearestFlight.altitudeFeet.toLocaleString()} ft`}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="metric-tile">
+                      <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Tracked</div>
+                      <div className="mt-2 font-mono text-2xl text-white">{trafficSnapshot?.flights.length ?? 0}</div>
+                    </div>
+                    <div className="metric-tile">
+                      <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Airborne</div>
+                      <div className="mt-2 font-mono text-2xl text-white">{airborneFlights.length}</div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm leading-7 text-slate-400">The nearby traffic overlay will appear once the live ADS-B scope loads around your position.</p>
+              )}
             </div>
           </div>
         </div>
@@ -383,7 +585,7 @@ export default function WeatherPage() {
                 </div>
               </>
             ) : (
-              <p className="text-sm leading-7 text-slate-400">Air quality data is not available yet for this search.</p>
+              <p className="text-sm leading-7 text-slate-400">Air quality data is not available yet for this location.</p>
             )}
           </div>
 

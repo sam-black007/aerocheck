@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Calendar,
   Clock,
+  CloudSun,
   Gauge,
   MapPin,
   Navigation,
@@ -13,10 +14,17 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import OperationsMap from '../components/OperationsMap';
 import { getAllFlights, getAllAircraft, saveFlight, deleteFlight, getSettings } from '../lib/db';
 import { generateFlightId } from '../lib/calculations';
-import { fetchTrafficByCoordinates, fetchTrafficByQuery, projectFlightToRadar, type LiveTrafficSnapshot } from '../lib/live-traffic';
-import { getDefaultWeather } from '../lib/weather';
+import { readCachedCurrentLocation, requestCurrentLocation } from '../lib/current-location';
+import { fetchTrafficByCoordinates, type LiveTrafficSnapshot } from '../lib/live-traffic';
+import {
+  fetchLocationBriefing,
+  fetchLocationBriefingByCoordinates,
+  type WeatherBriefing,
+} from '../lib/live-weather';
+import { getDefaultWeather, getWeatherIcon, getWindDirectionName } from '../lib/weather';
 import type { FlightLog, Aircraft } from '../types';
 
 function formatDateTime(value?: string | null): string {
@@ -40,17 +48,23 @@ function formatEmergency(value: string): string {
   return value === 'none' ? 'Normal' : value.replace(/_/g, ' ');
 }
 
+type LocationMode = 'current' | 'saved' | 'search';
+
 export default function FlightsPage() {
   const [flights, setFlights] = useState<FlightLog[]>([]);
   const [aircraft, setAircraft] = useState<Aircraft[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [trafficQuery, setTrafficQuery] = useState('');
   const [radiusNm, setRadiusNm] = useState(40);
+  const [briefing, setBriefing] = useState<WeatherBriefing | null>(null);
   const [trafficSnapshot, setTrafficSnapshot] = useState<LiveTrafficSnapshot | null>(null);
   const [trafficLoading, setTrafficLoading] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [trafficError, setTrafficError] = useState<string | null>(null);
   const [selectedFlightId, setSelectedFlightId] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [locationMode, setLocationMode] = useState<LocationMode>('saved');
+  const [locationAccuracy, setLocationAccuracy] = useState<number | null>(null);
   const [newFlight, setNewFlight] = useState<Partial<FlightLog>>({
     aircraftId: '',
     aircraftName: '',
@@ -79,6 +93,14 @@ export default function FlightsPage() {
     return () => window.clearInterval(intervalId);
   }, [autoRefresh, radiusNm, trafficSnapshot]);
 
+  useEffect(() => {
+    if (!trafficSnapshot) {
+      return;
+    }
+
+    void refreshTraffic(undefined, radiusNm, true);
+  }, [radiusNm]);
+
   async function loadLogData() {
     try {
       const [storedFlights, storedAircraft] = await Promise.all([getAllFlights(), getAllAircraft()]);
@@ -97,20 +119,91 @@ export default function FlightsPage() {
     }
   }
 
-  async function loadInitialTraffic() {
+  async function loadSavedTraffic() {
     try {
       const settings = await getSettings();
       const defaultLocation = settings?.defaultLocation?.trim() || 'New York, NY';
       setTrafficQuery(defaultLocation);
-      await refreshTraffic(defaultLocation, radiusNm, false);
+      await refreshTraffic(defaultLocation, radiusNm, false, 'saved');
     } catch (error) {
-      console.error('Failed to load initial traffic location', error);
+      console.error('Failed to load saved traffic location', error);
       setTrafficQuery('New York, NY');
-      await refreshTraffic('New York, NY', radiusNm, false);
+      await refreshTraffic('New York, NY', radiusNm, false, 'saved');
     }
   }
 
-  async function refreshTraffic(rawQuery = trafficQuery, nextRadius = radiusNm, useCachedCenter = false) {
+  async function loadInitialTraffic() {
+    const cachedLocation = readCachedCurrentLocation();
+    if (cachedLocation) {
+      setLocationAccuracy(cachedLocation.accuracy);
+      const loadedFromCache = await loadTrafficByCoordinates(cachedLocation.lat, cachedLocation.lon, 'current');
+      if (loadedFromCache) {
+        return;
+      }
+    }
+
+    const located = await handleUseCurrentLocation(true);
+    if (!located) {
+      await loadSavedTraffic();
+    }
+  }
+
+  async function applyTrafficSnapshot(nextSnapshot: LiveTrafficSnapshot) {
+    setTrafficSnapshot(nextSnapshot);
+    setSelectedFlightId((current) =>
+      nextSnapshot.flights.some((flight) => flight.id === current) ? current : nextSnapshot.flights[0]?.id ?? null
+    );
+  }
+
+  async function loadTrafficByCoordinates(lat: number, lon: number, mode: LocationMode) {
+    setTrafficLoading(true);
+    setTrafficError(null);
+
+    try {
+      const nextBriefing = await fetchLocationBriefingByCoordinates(lat, lon);
+      const nextSnapshot = await fetchTrafficByCoordinates(nextBriefing.location, radiusNm);
+      setBriefing(nextBriefing);
+      setTrafficQuery(nextBriefing.location.name);
+      setLocationMode(mode);
+      await applyTrafficSnapshot(nextSnapshot);
+      return true;
+    } catch (error) {
+      console.error('Current location traffic lookup failed', error);
+      setTrafficError('The live traffic feed could not be loaded for your current location.');
+      return false;
+    } finally {
+      setTrafficLoading(false);
+    }
+  }
+
+  async function handleUseCurrentLocation(silentOnError = false) {
+    setLocating(true);
+
+    if (!silentOnError) {
+      setTrafficError(null);
+    }
+
+    try {
+      const currentLocation = await requestCurrentLocation();
+      setLocationAccuracy(currentLocation.accuracy);
+      return loadTrafficByCoordinates(currentLocation.lat, currentLocation.lon, 'current');
+    } catch (error) {
+      console.error('Browser location lookup failed', error);
+      if (!silentOnError) {
+        setTrafficError(error instanceof Error ? error.message : 'The browser could not provide a current position.');
+      }
+      return false;
+    } finally {
+      setLocating(false);
+    }
+  }
+
+  async function refreshTraffic(
+    rawQuery = trafficQuery,
+    nextRadius = radiusNm,
+    useCachedCenter = false,
+    nextLocationMode: LocationMode = 'search'
+  ) {
     const query = rawQuery.trim();
     if (!query && !useCachedCenter) {
       setTrafficError('Enter a city or airport before loading the traffic picture.');
@@ -121,15 +214,18 @@ export default function FlightsPage() {
     setTrafficError(null);
 
     try {
-      const snapshot =
-        useCachedCenter && trafficSnapshot
-          ? await fetchTrafficByCoordinates(trafficSnapshot.center, nextRadius)
-          : await fetchTrafficByQuery(query, nextRadius);
-
-      setTrafficSnapshot(snapshot);
-      setSelectedFlightId((current) =>
-        snapshot.flights.some((flight) => flight.id === current) ? current : snapshot.flights[0]?.id ?? null
-      );
+      if (useCachedCenter && trafficSnapshot) {
+        const nextSnapshot = await fetchTrafficByCoordinates(trafficSnapshot.center, nextRadius);
+        await applyTrafficSnapshot(nextSnapshot);
+      } else {
+        const nextBriefing = await fetchLocationBriefing(query);
+        const nextSnapshot = await fetchTrafficByCoordinates(nextBriefing.location, nextRadius);
+        setBriefing(nextBriefing);
+        setTrafficQuery(nextBriefing.location.name);
+        setLocationMode(nextLocationMode);
+        setLocationAccuracy(null);
+        await applyTrafficSnapshot(nextSnapshot);
+      }
     } catch (error) {
       console.error('Traffic refresh failed', error);
       setTrafficError('The live traffic feed could not be loaded for that location.');
@@ -150,7 +246,7 @@ export default function FlightsPage() {
       date: newFlight.date,
       duration: newFlight.duration,
       location: newFlight.location || trafficSnapshot?.center.name || 'Unknown',
-      weather: newFlight.weather || getDefaultWeather(),
+      weather: newFlight.weather || briefing?.weather || getDefaultWeather(),
       notes: newFlight.notes || '',
       rating: newFlight.rating || 3,
     };
@@ -166,7 +262,7 @@ export default function FlightsPage() {
         location: '',
         notes: '',
         rating: 3,
-        weather: getDefaultWeather(),
+        weather: briefing?.weather || getDefaultWeather(),
       });
       await loadLogData();
     } catch (error) {
@@ -200,27 +296,30 @@ export default function FlightsPage() {
     airborneFlights.length > 0
       ? Math.round(airborneFlights.reduce((sum, flight) => sum + flight.speedKnots, 0) / airborneFlights.length)
       : 0;
+  const fieldWeather = briefing?.weather ?? getDefaultWeather();
 
   return (
     <div className="space-y-6 animate-fade-in">
       <section className="hero-panel px-6 py-7 lg:px-8">
-        <div className="grid gap-6 xl:grid-cols-[1.18fr,0.82fr]">
+        <div className="grid gap-6 xl:grid-cols-[0.95fr,1.05fr]">
           <div>
-            <div className="section-kicker">Airspace monitor</div>
+            <div className="section-kicker">Current location airspace</div>
             <h1 className="mt-3 font-display text-4xl font-semibold uppercase tracking-[0.12em] text-white">
-              Live Traffic Scope
+              Live Traffic Map
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300">
-              Watch nearby aircraft with live ADS-B traffic around your field, then keep your own RC sorties logged underneath.
+              Track nearby aircraft over a real map around your position, then keep your own RC sorties logged underneath.
             </p>
 
             <div className="mt-6 flex flex-wrap gap-2">
               <span className="data-chip">{trafficSnapshot?.source || 'airplanes.live ADS-B network'}</span>
               {trafficSnapshot?.updatedAt && <span className="data-chip">Updated {formatDateTime(trafficSnapshot.updatedAt)}</span>}
-              <span className="data-chip">{autoRefresh ? 'Auto refresh 20s' : 'Manual refresh'}</span>
+              <span className={locationMode === 'current' ? 'badge-success' : locationMode === 'saved' ? 'badge-info' : 'badge-warning'}>
+                {locationMode === 'current' ? 'Current location' : locationMode === 'saved' ? 'Saved location' : 'Search location'}
+              </span>
             </div>
 
-            <div className="mt-6 grid gap-4 lg:grid-cols-[1fr,12rem,12rem]">
+            <div className="mt-6 grid gap-4 lg:grid-cols-[1fr,11rem,11rem]">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" />
                 <input
@@ -254,6 +353,23 @@ export default function FlightsPage() {
               </button>
             </div>
 
+            <div className="mt-4 flex flex-col gap-3 md:flex-row">
+              <button
+                className="btn-secondary min-w-[12rem]"
+                onClick={() => void handleUseCurrentLocation()}
+                disabled={locating || trafficLoading}
+              >
+                {locating ? 'Finding position...' : 'Use my location'}
+              </button>
+              <button
+                type="button"
+                className={autoRefresh ? 'badge-success justify-center' : 'badge-info justify-center'}
+                onClick={() => setAutoRefresh((current) => !current)}
+              >
+                {autoRefresh ? 'Auto refresh on' : 'Auto refresh off'}
+              </button>
+            </div>
+
             <div className="mt-5 flex flex-wrap items-center gap-4 text-sm text-slate-300">
               {trafficSnapshot && (
                 <>
@@ -266,171 +382,108 @@ export default function FlightsPage() {
                   </span>
                 </>
               )}
-              <button
-                type="button"
-                className={autoRefresh ? 'badge-success' : 'badge-info'}
-                onClick={() => setAutoRefresh((current) => !current)}
-              >
-                {autoRefresh ? 'Auto refresh on' : 'Auto refresh off'}
-              </button>
+              {locationAccuracy != null && <span className="text-slate-500">Accuracy about {locationAccuracy} m</span>}
             </div>
 
             {trafficError && <p className="mt-4 text-sm text-red-300">{trafficError}</p>}
           </div>
 
-          <div className="card p-6">
-            <div className="section-kicker">Traffic summary</div>
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <div className="metric-tile">
-                <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Tracked</div>
-                <div className="mt-2 font-mono text-3xl text-white">{trafficSnapshot?.flights.length ?? 0}</div>
-                <div className="mt-1 text-xs text-slate-400">Aircraft in scope</div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="metric-tile sm:col-span-2">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="section-kicker">Field weather</div>
+                  <div className="mt-3 text-5xl">{getWeatherIcon(fieldWeather)}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs uppercase tracking-[0.24em] text-slate-500">{briefing?.source || 'Point-linked brief'}</div>
+                  <div className="mt-2 text-3xl font-bold text-white">{fieldWeather.temperature} deg C</div>
+                </div>
               </div>
-              <div className="metric-tile">
-                <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Airborne</div>
-                <div className="mt-2 font-mono text-3xl text-white">{airborneFlights.length}</div>
-                <div className="mt-1 text-xs text-slate-400">Moving traffic</div>
-              </div>
-              <div className="metric-tile">
-                <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Avg speed</div>
-                <div className="mt-2 font-mono text-3xl text-white">{averageSpeed}</div>
-                <div className="mt-1 text-xs text-slate-400">kt among airborne</div>
-              </div>
-              <div className="metric-tile">
-                <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Top altitude</div>
-                <div className="mt-2 font-mono text-3xl text-white">{topAltitude.toLocaleString()}</div>
-                <div className="mt-1 text-xs text-slate-400">ft in this sweep</div>
-              </div>
+              <p className="mt-4 text-sm leading-7 text-slate-300">{fieldWeather.description}</p>
+            </div>
+
+            <div className="metric-tile">
+              <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Tracked</div>
+              <div className="mt-2 font-mono text-3xl text-white">{trafficSnapshot?.flights.length ?? 0}</div>
+              <div className="mt-1 text-xs text-slate-400">Aircraft in scope</div>
+            </div>
+
+            <div className="metric-tile">
+              <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Airborne</div>
+              <div className="mt-2 font-mono text-3xl text-white">{airborneFlights.length}</div>
+              <div className="mt-1 text-xs text-slate-400">Moving traffic</div>
+            </div>
+
+            <div className="metric-tile">
+              <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Avg speed</div>
+              <div className="mt-2 font-mono text-3xl text-white">{averageSpeed}</div>
+              <div className="mt-1 text-xs text-slate-400">kt among airborne</div>
+            </div>
+
+            <div className="metric-tile">
+              <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Top altitude</div>
+              <div className="mt-2 font-mono text-3xl text-white">{topAltitude.toLocaleString()}</div>
+              <div className="mt-1 text-xs text-slate-400">ft in this sweep</div>
             </div>
           </div>
         </div>
-      </section>
 
-      <div className="grid gap-6 xl:grid-cols-[1.08fr,0.92fr]">
-        <div className="space-y-6">
-          <div className="card p-5">
-            <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="mt-6 grid gap-6 xl:grid-cols-[1.1fr,0.9fr]">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="section-kicker">Relative radar</div>
-                <h2 className="mt-2 text-2xl font-semibold text-white">Airspace Scope</h2>
+                <div className="section-kicker">Geographic scope</div>
+                <h2 className="mt-2 text-2xl font-semibold text-white">Airspace Map</h2>
               </div>
               <div className="text-right text-xs uppercase tracking-[0.22em] text-slate-500">
                 {trafficSnapshot ? `${trafficSnapshot.radiusNm} nm radius` : 'Awaiting target area'}
               </div>
             </div>
 
-            <div className="radar-scope aspect-square p-5">
-              <svg viewBox="0 0 100 100" className="relative z-10 h-full w-full">
-                {[14, 28, 42].map((ringRadius) => (
-                  <circle key={ringRadius} cx="50" cy="50" r={ringRadius} fill="none" stroke="rgba(125,211,252,0.14)" />
-                ))}
-                <line x1="8" y1="50" x2="92" y2="50" stroke="rgba(125,211,252,0.14)" />
-                <line x1="50" y1="8" x2="50" y2="92" stroke="rgba(125,211,252,0.14)" />
-
-                {(trafficSnapshot?.flights ?? []).slice(0, 120).map((flight) => {
-                  if (!trafficSnapshot) {
-                    return null;
-                  }
-
-                  const point = projectFlightToRadar(trafficSnapshot.center, flight, trafficSnapshot.radiusNm);
-                  if (!point.visible) {
-                    return null;
-                  }
-
-                  const isSelected = selectedTrafficFlight?.id === flight.id;
-                  const fill = flight.emergency !== 'none' ? '#f87171' : flight.isOnGround ? '#f59e0b' : '#7dd3fc';
-
-                  return (
-                    <g
-                      key={flight.id}
-                      transform={`translate(${point.x} ${point.y}) rotate(${flight.heading})`}
-                      className="cursor-pointer"
-                      onClick={() => setSelectedFlightId(flight.id)}
-                    >
-                      <path
-                        d={isSelected ? 'M0 -3.6 L2.8 3.6 L0 2.1 L-2.8 3.6 Z' : 'M0 -2.8 L2.2 2.8 L0 1.4 L-2.2 2.8 Z'}
-                        fill={fill}
-                        opacity={isSelected ? 1 : 0.88}
-                      />
-                    </g>
-                  );
-                })}
-
-                <circle cx="50" cy="50" r="1.5" fill="#f8fafc" />
-                <text x="50" y="5" textAnchor="middle" fill="rgba(226,232,240,0.7)" fontSize="4">N</text>
-                <text x="95" y="52" textAnchor="middle" fill="rgba(226,232,240,0.7)" fontSize="4">E</text>
-                <text x="50" y="98" textAnchor="middle" fill="rgba(226,232,240,0.7)" fontSize="4">S</text>
-                <text x="5" y="52" textAnchor="middle" fill="rgba(226,232,240,0.7)" fontSize="4">W</text>
-              </svg>
-
-              <div className="pointer-events-none absolute left-5 top-5 z-10 rounded-full border border-white/10 bg-slate-950/75 px-3 py-1 text-[0.68rem] uppercase tracking-[0.24em] text-slate-300">
-                Live scope
-              </div>
-              <div className="pointer-events-none absolute bottom-5 right-5 z-10 rounded-full border border-white/10 bg-slate-950/75 px-3 py-1 text-[0.68rem] uppercase tracking-[0.24em] text-slate-300">
-                Center {trafficSnapshot?.center.name || 'Pending'}
-              </div>
-            </div>
+            <OperationsMap
+              center={trafficSnapshot?.center ?? briefing?.location ?? null}
+              flights={trafficSnapshot?.flights ?? []}
+              radiusNm={trafficSnapshot?.radiusNm ?? radiusNm}
+              selectedFlightId={selectedFlightId}
+              onFlightSelect={setSelectedFlightId}
+              weatherSummary={{
+                description: fieldWeather.description,
+                temperature: fieldWeather.temperature,
+                visibility: fieldWeather.visibility,
+                windSpeed: fieldWeather.windSpeed,
+              }}
+            />
           </div>
 
-          <div className="card overflow-hidden">
-            <div className="border-b border-white/10 px-6 py-5">
-              <div className="section-kicker">Traffic list</div>
-              <h2 className="mt-2 text-2xl font-semibold text-white">Aircraft in Range</h2>
+          <div className="space-y-6">
+            <div className="card p-6">
+              <div className="mb-4 flex items-center gap-3">
+                <CloudSun className="h-5 w-5 text-sky-300" />
+                <h2 className="text-xl font-semibold text-white">Center Conditions</h2>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="metric-tile">
+                  <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Wind</div>
+                  <div className="mt-2 font-mono text-2xl text-white">{fieldWeather.windSpeed} mph</div>
+                  <div className="mt-1 text-xs text-slate-400">{getWindDirectionName(fieldWeather.windDirection)}</div>
+                </div>
+                <div className="metric-tile">
+                  <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Visibility</div>
+                  <div className="mt-2 font-mono text-2xl text-white">{fieldWeather.visibility} km</div>
+                </div>
+                <div className="metric-tile">
+                  <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Humidity</div>
+                  <div className="mt-2 font-mono text-2xl text-white">{fieldWeather.humidity}%</div>
+                </div>
+                <div className="metric-tile">
+                  <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Source</div>
+                  <div className="mt-2 text-sm font-medium text-white">{briefing?.sourceDetail || 'Current point brief'}</div>
+                </div>
+              </div>
             </div>
 
-            {trafficSnapshot?.flights.length ? (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[48rem]">
-                  <thead>
-                    <tr className="border-b border-white/10 text-left text-xs uppercase tracking-[0.24em] text-slate-500">
-                      <th className="px-6 py-4">Callsign</th>
-                      <th className="px-6 py-4">Type</th>
-                      <th className="px-6 py-4">Altitude</th>
-                      <th className="px-6 py-4">Speed</th>
-                      <th className="px-6 py-4">Distance</th>
-                      <th className="px-6 py-4">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {trafficSnapshot.flights.map((flight) => {
-                      const isSelected = selectedTrafficFlight?.id === flight.id;
-                      return (
-                        <tr
-                          key={flight.id}
-                          className={`cursor-pointer border-b border-white/5 transition-colors ${isSelected ? 'bg-sky-500/[0.08]' : 'hover:bg-white/[0.03]'}`}
-                          onClick={() => setSelectedFlightId(flight.id)}
-                        >
-                          <td className="px-6 py-4">
-                            <div className="font-medium text-white">{flight.callsign}</div>
-                            <div className="text-xs text-slate-500">{flight.registration}</div>
-                          </td>
-                          <td className="px-6 py-4 text-sm text-slate-300">
-                            {flight.aircraftType}
-                            <div className="text-xs text-slate-500">{flight.description}</div>
-                          </td>
-                          <td className="px-6 py-4 text-sm text-slate-300">{formatAltitude(flight.altitudeFeet)}</td>
-                          <td className="px-6 py-4 text-sm text-slate-300">{flight.speedKnots} kt</td>
-                          <td className="px-6 py-4 text-sm text-slate-300">{flight.distanceNm} nm</td>
-                          <td className="px-6 py-4">
-                            <span className={flight.emergency !== 'none' ? 'badge-danger' : flight.isOnGround ? 'badge-warning' : 'badge-success'}>
-                              {flight.emergency !== 'none' ? 'Emergency' : flight.isOnGround ? 'Ground' : 'Airborne'}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="px-6 py-12 text-center text-slate-400">
-                {trafficLoading ? 'Loading nearby aircraft...' : 'No traffic returned for this scope yet.'}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="space-y-6">
           <div className="card p-6">
             <div className="section-kicker">Selected target</div>
             <h2 className="mt-2 text-2xl font-semibold text-white">Flight Detail</h2>
@@ -507,12 +560,73 @@ export default function FlightsPage() {
               </div>
             ) : (
               <div className="mt-5 rounded-[24px] border border-white/10 bg-white/[0.03] p-5 text-sm leading-7 text-slate-400">
-                Pick an aircraft from the scope or the table to inspect its live altitude, speed, and relative position.
+                Pick an aircraft from the map or the table to inspect its live altitude, speed, and relative position.
               </div>
             )}
           </div>
+          </div>
+        </div>
+      </section>
 
-          <div className="card p-6">
+      <div className="grid gap-6 xl:grid-cols-[1.08fr,0.92fr]">
+        <div className="card overflow-hidden">
+          <div className="border-b border-white/10 px-6 py-5">
+            <div className="section-kicker">Traffic list</div>
+            <h2 className="mt-2 text-2xl font-semibold text-white">Aircraft in Range</h2>
+          </div>
+
+          {trafficSnapshot?.flights.length ? (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[48rem]">
+                <thead>
+                  <tr className="border-b border-white/10 text-left text-xs uppercase tracking-[0.24em] text-slate-500">
+                    <th className="px-6 py-4">Callsign</th>
+                    <th className="px-6 py-4">Type</th>
+                    <th className="px-6 py-4">Altitude</th>
+                    <th className="px-6 py-4">Speed</th>
+                    <th className="px-6 py-4">Distance</th>
+                    <th className="px-6 py-4">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {trafficSnapshot.flights.map((flight) => {
+                    const isSelected = selectedTrafficFlight?.id === flight.id;
+                    return (
+                      <tr
+                        key={flight.id}
+                        className={`cursor-pointer border-b border-white/5 transition-colors ${isSelected ? 'bg-sky-500/[0.08]' : 'hover:bg-white/[0.03]'}`}
+                        onClick={() => setSelectedFlightId(flight.id)}
+                      >
+                        <td className="px-6 py-4">
+                          <div className="font-medium text-white">{flight.callsign}</div>
+                          <div className="text-xs text-slate-500">{flight.registration}</div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-300">
+                          {flight.aircraftType}
+                          <div className="text-xs text-slate-500">{flight.description}</div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-300">{formatAltitude(flight.altitudeFeet)}</td>
+                        <td className="px-6 py-4 text-sm text-slate-300">{flight.speedKnots} kt</td>
+                        <td className="px-6 py-4 text-sm text-slate-300">{flight.distanceNm} nm</td>
+                        <td className="px-6 py-4">
+                          <span className={flight.emergency !== 'none' ? 'badge-danger' : flight.isOnGround ? 'badge-warning' : 'badge-success'}>
+                            {flight.emergency !== 'none' ? 'Emergency' : flight.isOnGround ? 'Ground' : 'Airborne'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="px-6 py-12 text-center text-slate-400">
+              {trafficLoading ? 'Loading nearby aircraft...' : 'No traffic returned for this scope yet.'}
+            </div>
+          )}
+        </div>
+
+        <div className="card p-6">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
                 <div className="section-kicker">Personal records</div>

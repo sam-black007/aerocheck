@@ -1,5 +1,5 @@
 import type { WeatherConditions } from '../types';
-import { fetchNominatim, fetchSunTimes } from './apis';
+import { fetchNominatim, fetchNominatimReverse, fetchSunTimes } from './apis';
 
 export interface ResolvedLocation {
   name: string;
@@ -435,50 +435,47 @@ export async function resolveLocation(query: string): Promise<ResolvedLocation> 
   };
 }
 
+export async function resolveCoordinates(lat: number, lon: number): Promise<ResolvedLocation> {
+  try {
+    const result = await fetchNominatimReverse(lat, lon);
+    return {
+      name: normalizeLocationName(result.name),
+      lat: result.lat,
+      lon: result.lon,
+      country: result.country,
+      state: result.state,
+    };
+  } catch (error) {
+    console.warn('Reverse geocode fallback engaged', error);
+    return {
+      name: `Current location (${lat.toFixed(4)}, ${lon.toFixed(4)})`,
+      lat,
+      lon,
+    };
+  }
+}
+
 export async function fetchLiveWeatherByCoordinates(lat: number, lon: number): Promise<WeatherConditions> {
   return fetchOpenMeteoWeather(lat, lon);
 }
 
-export async function fetchLocationBriefing(query: string): Promise<WeatherBriefing> {
-  const trimmedQuery = query.trim();
-  if (!trimmedQuery) {
-    throw new Error('Location query is required');
+async function enrichBriefingForLocation(
+  location: ResolvedLocation,
+  seed?: {
+    weather: WeatherConditions;
+    source: string;
+    sourceDetail: string;
+    stationId?: string;
+    observedAt?: string;
   }
+): Promise<WeatherBriefing> {
+  let weather = seed?.weather;
+  let source = seed?.source ?? 'Open-Meteo';
+  let sourceDetail = seed?.sourceDetail ?? 'Global forecast grid';
+  let stationId = seed?.stationId;
+  let observedAt = seed?.observedAt;
 
-  let location: ResolvedLocation;
-  let source = 'Open-Meteo';
-  let sourceDetail = 'Global forecast grid';
-  let stationId: string | undefined;
-  let observedAt: string | undefined;
-  let weather: WeatherConditions;
-
-  if (isLikelyUSStationCode(trimmedQuery)) {
-    try {
-      const stationLocation = await fetchNOAAStation(trimmedQuery);
-      const observation = await fetchNOAAObservationByStation(trimmedQuery);
-      location = stationLocation;
-      weather = observation.weather;
-      stationId = observation.stationId;
-      observedAt = observation.observedAt;
-      source = 'NOAA station observation';
-      sourceDetail = observation.stationName || trimmedQuery.toUpperCase();
-    } catch (error) {
-      console.warn('Station lookup fallback engaged', error);
-      location = await resolveLocation(trimmedQuery);
-      if (isUSLocation(location)) {
-        const observation = await fetchNearestNOAAObservation(location);
-        weather = observation.weather;
-        stationId = observation.stationId;
-        observedAt = observation.observedAt;
-        source = 'NOAA station observation';
-        sourceDetail = observation.stationName || observation.stationId || 'Nearest NOAA station';
-      } else {
-        weather = await fetchOpenMeteoWeather(location.lat, location.lon);
-      }
-    }
-  } else {
-    location = await resolveLocation(trimmedQuery);
-
+  if (!weather) {
     if (isUSLocation(location)) {
       try {
         const observation = await fetchNearestNOAAObservation(location);
@@ -513,6 +510,37 @@ export async function fetchLocationBriefing(query: string): Promise<WeatherBrief
     sunTimes,
     alerts,
   };
+}
+
+export async function fetchLocationBriefing(query: string): Promise<WeatherBriefing> {
+  const trimmedQuery = query.trim();
+  if (!trimmedQuery) {
+    throw new Error('Location query is required');
+  }
+
+  if (isLikelyUSStationCode(trimmedQuery)) {
+    try {
+      const stationLocation = await fetchNOAAStation(trimmedQuery);
+      const observation = await fetchNOAAObservationByStation(trimmedQuery);
+      return enrichBriefingForLocation(stationLocation, {
+        weather: observation.weather,
+        source: 'NOAA station observation',
+        sourceDetail: observation.stationName || trimmedQuery.toUpperCase(),
+        stationId: observation.stationId,
+        observedAt: observation.observedAt,
+      });
+    } catch (error) {
+      console.warn('Station lookup fallback engaged', error);
+    }
+  }
+
+  const location = await resolveLocation(trimmedQuery);
+  return enrichBriefingForLocation(location);
+}
+
+export async function fetchLocationBriefingByCoordinates(lat: number, lon: number): Promise<WeatherBriefing> {
+  const location = await resolveCoordinates(lat, lon);
+  return enrichBriefingForLocation(location);
 }
 
 export async function fetchLiveWeatherByQuery(query: string): Promise<LiveWeatherResult> {

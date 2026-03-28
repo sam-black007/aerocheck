@@ -190,6 +190,23 @@
     @apply rounded-[24px] border border-white/10 bg-white/[0.04] p-4;
   }
 
+  .aviation-map {
+    @apply relative overflow-hidden rounded-[32px] border border-sky-400/[0.15] bg-[#04131f];
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.04),
+      0 30px 80px rgba(2, 8, 23, 0.35);
+  }
+
+  .aviation-map::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(180deg, rgba(8, 15, 30, 0.02), rgba(8, 15, 30, 0.28)),
+      radial-gradient(circle at top right, rgba(56, 189, 248, 0.14), transparent 35%);
+  }
+
   .radar-scope {
     @apply relative overflow-hidden rounded-[32px] border border-sky-400/[0.15] bg-[#03101a];
     box-shadow: inset 0 0 120px rgba(34, 197, 94, 0.08);
@@ -229,6 +246,50 @@
       radial-gradient(circle at top left, rgba(56, 189, 248, 0.08), transparent 24rem),
       radial-gradient(circle at 80% 15%, rgba(249, 115, 22, 0.08), transparent 20rem);
   }
+
+  .map-popup {
+    min-width: 11rem;
+  }
+
+  .map-popup-title {
+    font-family: 'Barlow Semi Condensed', 'IBM Plex Sans', sans-serif;
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #f8fafc;
+  }
+
+  .map-popup-subtitle {
+    margin-top: 0.25rem;
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(191, 219, 254, 0.74);
+  }
+
+  .map-popup-grid {
+    margin-top: 0.75rem;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+  }
+
+  .map-popup-grid span {
+    display: block;
+    font-size: 0.62rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(148, 163, 184, 0.9);
+  }
+
+  .map-popup-grid strong {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #e2e8f0;
+  }
 }
 
 @keyframes radarSweep {
@@ -239,4 +300,123 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+@keyframes currentLocationPulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.85;
+  }
+
+  70% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+
+  100% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+}
+
+.aviation-map .leaflet-container {
+  height: 100%;
+  width: 100%;
+  background: #07111f;
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+}
+
+.aviation-map .leaflet-control-zoom {
+  margin: 1rem;
+  border: none;
+  box-shadow: none;
+}
+
+.aviation-map .leaflet-control-zoom a {
+  background: rgba(8, 15, 30, 0.92);
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.aviation-map .leaflet-control-attribution {
+  margin: 0.75rem;
+  border-radius: 9999px;
+  background: rgba(8, 15, 30, 0.82);
+  padding: 0.2rem 0.55rem;
+  color: rgba(226, 232, 240, 0.8);
+}
+
+.aviation-map .leaflet-popup-content-wrapper,
+.aviation-map .leaflet-popup-tip {
+  background: rgba(8, 15, 30, 0.96);
+  color: #e2e8f0;
+  border: 1px solid rgba(125, 211, 252, 0.16);
+  box-shadow: 0 18px 40px rgba(2, 8, 23, 0.45);
+}
+
+.aviation-map .leaflet-popup-content {
+  margin: 0.9rem 1rem;
+}
+
+.aviation-map .leaflet-tile {
+  filter: saturate(0.85) contrast(1.03) brightness(0.78);
+}
+
+.current-location-icon,
+.flight-marker-icon {
+  background: transparent;
+  border: none;
+}
+
+.current-location-dot {
+  position: relative;
+  height: 18px;
+  width: 18px;
+  border-radius: 9999px;
+  border: 3px solid rgba(255, 255, 255, 0.92);
+  background: #38bdf8;
+  box-shadow: 0 0 0 5px rgba(56, 189, 248, 0.2), 0 0 18px rgba(56, 189, 248, 0.55);
+}
+
+.current-location-dot::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  border-radius: 9999px;
+  border: 2px solid rgba(56, 189, 248, 0.35);
+  animation: currentLocationPulse 2.4s ease-out infinite;
+}
+
+.flight-marker {
+  display: flex;
+  height: 30px;
+  width: 30px;
+  align-items: center;
+  justify-content: center;
+  color: #7dd3fc;
+  filter: drop-shadow(0 0 12px rgba(56, 189, 248, 0.35));
+  transform: rotate(var(--heading));
+  transition: transform 0.2s ease, filter 0.2s ease;
+}
+
+.flight-marker svg {
+  height: 24px;
+  width: 24px;
+  fill: currentColor;
+}
+
+.flight-marker.ground {
+  color: #fbbf24;
+  filter: drop-shadow(0 0 12px rgba(251, 191, 36, 0.28));
+}
+
+.flight-marker.emergency {
+  color: #f87171;
+  filter: drop-shadow(0 0 14px rgba(248, 113, 113, 0.38));
+}
+
+.flight-marker.selected {
+  color: #f8fafc;
+  filter: drop-shadow(0 0 16px rgba(248, 250, 252, 0.48));
+  transform: rotate(var(--heading)) scale(1.1);
 }

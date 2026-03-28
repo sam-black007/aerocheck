@@ -206,6 +206,8 @@ export interface GeocodingResult {
   state?: string;
 }
 
+export interface ReverseGeocodingResult extends GeocodingResult {}
+
 // Nominatim - OpenStreetMap geocoding
 export async function fetchNominatim(query: string): Promise<GeocodingResult[]> {
   const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5`;
@@ -221,6 +223,23 @@ export async function fetchNominatim(query: string): Promise<GeocodingResult[]> 
     country: r.address?.country || '',
     state: r.address?.state,
   }));
+}
+
+export async function fetchNominatimReverse(lat: number, lon: number): Promise<ReverseGeocodingResult> {
+  const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=jsonv2`;
+  const response = await fetch(url, {
+    headers: { 'User-Agent': 'AeroCheck/1.0' }
+  });
+  if (!response.ok) throw new Error('Nominatim reverse geocoding error');
+  const data = await response.json();
+
+  return {
+    name: data.display_name || `Current location (${lat.toFixed(4)}, ${lon.toFixed(4)})`,
+    lat: parseFloat(data.lat ?? String(lat)),
+    lon: parseFloat(data.lon ?? String(lon)),
+    country: data.address?.country || '',
+    state: data.address?.state,
+  };
 }
 
 // Geapify - Geocoding (free tier)
