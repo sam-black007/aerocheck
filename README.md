@@ -1,37 +1,102 @@
-# aeroCheck - Model Aircraft Flight Calculator
+# AeroCheck
 
-A comprehensive flight planning tool for hobbyist RC pilots that combines advanced aircraft physics calculations with real-time weather data.
-
-## Features
-
-- **Flight Calculator** - 15 aircraft types with advanced physics calculations
-- **Weather Integration** - Real-time weather data for flight planning
-- **Weather Simulator** - Test different conditions and see performance impact
-- **Flight Tracking** - Log your flights and track progress
-- **Analytics Dashboard** - Visualize your flight history
-- **Model Comparison** - Compare aircraft side by side
+Model aircraft flight calculator and weather tracker for hobbyist pilots.
 
 ## Live Demo
 
-Visit the live demo at: https://sam-black007.github.io/aerocheck/
+https://sam-black007.github.io/aerocheck/
 
-## Quick Start
+## What This Build Includes
 
-Simply open `index.html` in your browser - no build step required!
+- React 18 + TypeScript + Vite app structure
+- Multi-page dashboard, calculator, simulator, weather, flights, models, analytics, compare, and settings views
+- Aircraft performance calculations and advanced physics helpers
+- Weather loading with public-source fallbacks
+- IndexedDB persistence for aircraft, flights, and settings
+- GitHub Pages deployment workflow
 
-## Pages
+## Features
 
-This version is a single-page app with shareable hash routes:
+### Flight Calculator
 
-- `/#dashboard` - Dashboard with weather overview
-- `/#calculator` - Flight performance calculator
-- `/#simulator` - Weather impact simulator
-- `/#weather` - Detailed weather data
-- `/#flights` - Flight log
-- `/#analytics` - Performance analytics
-- `/#compare` - Model comparison
-- `/#models` - Aircraft library
-- `/#settings` - Configuration
+- 15 aircraft types
+- Wing loading, thrust-to-weight, suitability score
+- Stall speed, cruise speed, and climb estimates
+- Motor, propeller, and battery inputs
+
+### Advanced Physics
+
+- Lift and drag coefficients
+- Glide ratio
+- Turn radius and turn rate
+- Stability factor and CG helpers
+- Motor and propeller efficiency
+- Flight envelope helpers
+
+### Weather
+
+- Public weather and geocoding integrations
+- Sunrise and sunset information
+- Air-quality support where data is available
+- Weather simulator for density-altitude and performance effects
+
+### Flight Data
+
+- Flight log storage
+- Aircraft library
+- Analytics and model comparison views
+- Data export and import
+
+## API Notes
+
+The app is set up so normal users do not need to paste API keys into the UI.
+
+- Built-in public providers are used first.
+- Optional premium API integrations can be extended later through environment variables if needed.
+- No end-user API setup is required for the current app flow.
+
+## Local Development
+
+Requirements:
+
+- Node.js 18+
+- npm
+
+Commands:
+
+```bash
+npm install
+npm run dev
+```
+
+Build:
+
+```bash
+npm run build
+npm run preview
+```
+
+Tests:
+
+```bash
+npm run test
+npm run lint
+```
+
+## Deployment
+
+GitHub Pages deploys automatically from `main` through the workflow in `.github/workflows/deploy.yml`.
+
+## Tech Stack
+
+- React 18
+- TypeScript
+- Tailwind CSS
+- Vite
+- React Router
+- Recharts
+- IndexedDB
+- Vitest
 
 ## License
 
