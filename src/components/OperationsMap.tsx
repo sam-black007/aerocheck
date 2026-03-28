@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import type { LiveTrafficFlight } from '../lib/live-traffic';
 import type { ResolvedLocation } from '../lib/live-weather';
@@ -22,26 +22,29 @@ interface OperationsMapProps {
   cloudLayers?: CloudLayer[];
   showCloudOverlay?: boolean;
   showFlightRoute?: boolean;
+  mapStyle?: 'osm' | 'satellite' | 'dark';
 }
 
 const DEFAULT_CENTER: [number, number] = [20, 0];
 
 const AIRCRAFT_SVG_ICONS: Record<string, string> = {
-  narrowbody: `<svg viewBox="0 0 32 32"><path d="M16 4L8 18H14V28H18V18H24L16 4Z"/></svg>`,
-  widebody: `<svg viewBox="0 0 32 32"><path d="M16 2L6 16H12V28H20V16H26L16 2Z M10 18H8V20H10V18Z M22 18H24V20H22V18Z"/></svg>`,
-  regional: `<svg viewBox="0 0 32 32"><path d="M16 4L10 16H14V26H18V16H22L16 4Z"/></svg>`,
-  ga: `<svg viewBox="0 0 32 32"><path d="M16 6L10 18H14V24H18V18H22L16 6Z M12 20H10V22H12V20Z M20 20H22V22H20V20Z"/></svg>`,
-  helicopter: `<svg viewBox="0 0 32 32"><ellipse cx="16" cy="18" rx="6" ry="4"/><path d="M8 14H24M16 10V18M14 20L16 26L18 20"/></svg>`,
-  default: `<svg viewBox="0 0 32 32"><path d="M16 4L10 16H14V26H18V16H22L16 4Z"/></svg>`,
+  narrowbody: `<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M16 4L8 18H14V28H18V18H24L16 4Z" fill="currentColor"/></svg>`,
+  widebody: `<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M16 2L6 16H12V28H20V16H26L16 2Z" fill="currentColor"/><rect x="8" y="18" width="4" height="2" fill="currentColor" opacity="0.5"/><rect x="20" y="18" width="4" height="2" fill="currentColor" opacity="0.5"/></svg>`,
+  regional: `<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M16 4L10 16H14V26H18V16H22L16 4Z" fill="currentColor"/></svg>`,
+  ga: `<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M16 6L10 18H14V24H18V18H22L16 6Z" fill="currentColor"/><rect x="11" y="20" width="3" height="2" fill="currentColor" opacity="0.6"/><rect x="18" y="20" width="3" height="2" fill="currentColor" opacity="0.6"/></svg>`,
+  helicopter: `<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><ellipse cx="16" cy="20" rx="5" ry="3" fill="currentColor"/><path d="M4 14H28M16 10V20M13 24L16 28L19 24" stroke="currentColor" stroke-width="2" fill="none"/></svg>`,
+  turboprop: `<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M16 4L8 16H14V26H18V16H24L16 4Z" fill="currentColor"/><circle cx="10" cy="22" r="2" fill="currentColor" opacity="0.7"/><circle cx="22" cy="22" r="2" fill="currentColor" opacity="0.7"/></svg>`,
+  default: `<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M16 4L10 16H14V26H18V16H22L16 4Z" fill="currentColor"/></svg>`,
 };
 
 function getAircraftCategory(type: string): string {
   const t = type.toLowerCase();
-  if (['B737', 'A320', 'A321', 'A319', 'B717', 'E190', 'E195'].some(x => t.includes(x))) return 'narrowbody';
-  if (['B777', 'B787', 'A350', 'A330', 'B767'].some(x => t.includes(x))) return 'widebody';
-  if (['CRJ', 'E-JET', 'ATR', 'DH8', 'SF34'].some(x => t.includes(x))) return 'regional';
-  if (['C172', 'C182', 'PIPER', 'CESSNA'].some(x => t.includes(x))) return 'ga';
-  if (['HELI', 'ROTOR'].some(x => t.includes(x))) return 'helicopter';
+  if (['B737', 'A320', 'A321', 'A319', 'B717', 'E190', 'E195', 'B757', 'B767'].some(x => t.includes(x))) return 'narrowbody';
+  if (['B777', 'B787', 'A350', 'A330', 'B747', 'B767'].some(x => t.includes(x))) return 'widebody';
+  if (['CRJ', 'E-JET', 'ATR', 'DH8', 'SF34', 'DHC', 'CN35'].some(x => t.includes(x))) return 'turboprop';
+  if (['C172', 'C182', 'PIPER', 'CESSNA', 'BEECH', 'MUSTANG'].some(x => t.includes(x))) return 'ga';
+  if (['HELI', 'ROTOR', 'EC13', 'AS35', 'B206'].some(x => t.includes(x))) return 'helicopter';
+  if (['A340', 'A380', 'B744'].some(x => t.includes(x))) return 'widebody';
   return 'default';
 }
 
@@ -111,7 +114,7 @@ function createFlightIcon(flight: LiveTrafficFlight, isSelected: boolean) {
   const statusClass = flight.emergency !== 'none' ? 'emergency' : flight.isOnGround ? 'ground' : 'airborne';
   const category = getAircraftCategory(flight.aircraftType);
   const svgPath = AIRCRAFT_SVG_ICONS[category] || AIRCRAFT_SVG_ICONS.default;
-  const size = category === 'widebody' ? 36 : category === 'helicopter' ? 28 : 32;
+  const size = category === 'widebody' ? 36 : category === 'helicopter' ? 30 : 32;
   const glowColor = flight.emergency !== 'none' ? 'rgba(248, 113, 113, 0.6)' : isSelected ? 'rgba(248, 250, 252, 0.8)' : 'rgba(56, 189, 248, 0.5)';
 
   return L.divIcon({
@@ -126,33 +129,31 @@ function createFlightIcon(flight: LiveTrafficFlight, isSelected: boolean) {
   });
 }
 
-function CloudOverlay({ windDirection, windSpeed, onUpdate }: { windDirection: number; windSpeed: number; onUpdate: () => void }) {
-  const [clouds, setClouds] = useState<Array<{ id: number; x: number; y: number; size: number; opacity: number }>>([]);
+function CloudOverlay({ windSpeed }: { windSpeed: number }) {
+  const [clouds, setClouds] = useState<Array<{ id: number; x: number; y: number; size: number; opacity: number; speed: number }>>([]);
 
   useEffect(() => {
-    const initialClouds = Array.from({ length: 8 }, (_, i) => ({
+    const initialClouds = Array.from({ length: 12 }, (_, i) => ({
       id: i,
       x: Math.random() * 100,
       y: Math.random() * 100,
-      size: 60 + Math.random() * 80,
-      opacity: 0.1 + Math.random() * 0.15,
+      size: 80 + Math.random() * 120,
+      opacity: 0.15 + Math.random() * 0.2,
+      speed: 0.02 + Math.random() * 0.03,
     }));
     setClouds(initialClouds);
   }, []);
 
   useEffect(() => {
-    if (!onUpdate) return;
     const interval = setInterval(() => {
       setClouds(prev => prev.map(cloud => {
-        const speed = windSpeed * 0.05;
-        let newX = cloud.x + speed;
-        if (newX > 110) newX = -10;
+        let newX = cloud.x + cloud.speed * (windSpeed / 5);
+        if (newX > 110) newX = -15;
         return { ...cloud, x: newX };
       }));
-      onUpdate();
     }, 100);
     return () => clearInterval(interval);
-  }, [windSpeed, onUpdate]);
+  }, [windSpeed]);
 
   return (
     <div className="cloud-overlay">
@@ -164,7 +165,7 @@ function CloudOverlay({ windDirection, windSpeed, onUpdate }: { windDirection: n
             left: `${cloud.x}%`,
             top: `${cloud.y}%`,
             width: cloud.size,
-            height: cloud.size * 0.6,
+            height: cloud.size * 0.5,
             opacity: cloud.opacity,
           }}
         />
@@ -183,13 +184,12 @@ export default function OperationsMap({
   cloudLayers = [],
   showCloudOverlay = false,
   showFlightRoute = true,
+  mapStyle = 'osm',
 }: OperationsMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const overlayLayerRef = useRef<L.LayerGroup | null>(null);
   const routeLayerRef = useRef<L.LayerGroup | null>(null);
-  const [, setUpdateKey] = useState(0);
-  const [cloudOffset, setCloudOffset] = useState(0);
 
   const weatherDescription = weatherSummary?.description ?? null;
   const weatherTemperature = weatherSummary?.temperature ?? null;
@@ -201,16 +201,46 @@ export default function OperationsMap({
     if (!containerRef.current || mapRef.current) return;
 
     const map = L.map(containerRef.current, {
-      zoomControl: false,
+      zoomControl: true,
       attributionControl: true,
+      zoomControlPosition: 'bottomright',
     });
 
-    L.control.zoom({ position: 'bottomright' }).addTo(map);
-
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    // OpenStreetMap - clear and visible
+    const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    }).addTo(map);
+      opacity: 1,
+      attribution: '&copy; OpenStreetMap',
+    });
+
+    // Dark mode layer (CartoDB Dark Matter)
+    const darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19,
+      opacity: 1,
+      attribution: '&copy; CARTO',
+    });
+
+    // Satellite layer
+    const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+      opacity: 1,
+      attribution: '&copy; Esri',
+    });
+
+    // Store layers
+    (map as any).tileLayers = { osm: osmLayer, dark: darkLayer, satellite: satelliteLayer };
+    
+    // Add default layer based on style prop
+    if (mapStyle === 'dark') {
+      darkLayer.addTo(map);
+      (map as any).currentTileLayer = 'dark';
+    } else if (mapStyle === 'satellite') {
+      satelliteLayer.addTo(map);
+      (map as any).currentTileLayer = 'satellite';
+    } else {
+      osmLayer.addTo(map);
+      (map as any).currentTileLayer = 'osm';
+    }
 
     overlayLayerRef.current = L.layerGroup().addTo(map);
     routeLayerRef.current = L.layerGroup().addTo(map);
@@ -237,8 +267,8 @@ export default function OperationsMap({
 
     const target = L.latLng(center.lat, center.lon);
     const bounds = target.toBounds((radiusNm ?? 14) * 1852 * 2.8);
-    map.fitBounds(bounds, { padding: [28, 28], maxZoom: radiusNm ? 10 : 13 });
-    window.setTimeout(() => map.invalidateSize(), 0);
+    map.fitBounds(bounds, { padding: [28, 28], maxZoom: radiusNm ? 9 : 13 });
+    window.setTimeout(() => map.invalidateSize(), 100);
   }, [center, radiusNm]);
 
   useEffect(() => {
@@ -258,18 +288,17 @@ export default function OperationsMap({
       L.circle(centerLatLng, {
         radius: radiusNm * 1852,
         color: '#38bdf8',
-        weight: 1.5,
+        weight: 2,
         dashArray: '12 8',
         fillColor: '#0f172a',
-        fillOpacity: 0.08,
-        className: 'glow-sky',
+        fillOpacity: 0.05,
       }).addTo(overlayLayer);
 
       for (let i = 1; i <= 3; i++) {
         L.circle(centerLatLng, {
           radius: (radiusNm * 1852 * i) / 3,
-          color: 'rgba(56, 189, 248, 0.08)',
-          weight: 0.5,
+          color: 'rgba(56, 189, 248, 0.1)',
+          weight: 1,
           dashArray: '4 8',
           fillOpacity: 0,
         }).addTo(overlayLayer);
@@ -286,7 +315,7 @@ export default function OperationsMap({
         [centerLatLng, L.latLng(selectedFlight.latitude, selectedFlight.longitude)],
         {
           color: '#7dd3fc',
-          opacity: 0.6,
+          opacity: 0.7,
           weight: 2,
           dashArray: '10 6',
         }
@@ -296,8 +325,8 @@ export default function OperationsMap({
         radius: 5000,
         color: '#7dd3fc',
         weight: 1,
-        fillColor: 'rgba(56, 189, 248, 0.1)',
-        fillOpacity: 0.2,
+        fillColor: 'rgba(56, 189, 248, 0.15)',
+        fillOpacity: 0.3,
       }).addTo(routeLayer);
     }
 
@@ -317,12 +346,8 @@ export default function OperationsMap({
   return (
     <div className="aviation-map">
       <div ref={containerRef} className="h-full min-h-[28rem] w-full" />
-      {showCloudOverlay && weatherWindSpeed !== null && weatherWindDirection !== null && (
-        <CloudOverlay
-          windDirection={weatherWindDirection}
-          windSpeed={weatherWindSpeed}
-          onUpdate={() => setUpdateKey(k => k + 1)}
-        />
+      {showCloudOverlay && weatherWindSpeed !== null && (
+        <CloudOverlay windSpeed={weatherWindSpeed} />
       )}
       {!center && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-slate-950/55 text-sm uppercase tracking-[0.28em] text-slate-300">

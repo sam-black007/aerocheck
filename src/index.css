@@ -489,7 +489,11 @@
 }
 
 .aviation-map .leaflet-tile {
-  filter: saturate(0.85) contrast(1.03) brightness(0.78);
+  filter: none;
+}
+
+.aviation-map .leaflet-layer {
+  opacity: 1;
 }
 
 .current-location-icon,
