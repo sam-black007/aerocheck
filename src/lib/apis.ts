@@ -278,13 +278,13 @@ export interface SunTimes {
   sunrise: string;
   sunset: string;
   solarNoon: string;
-  dayLength: number;
+  dayLength: number | string;
 }
 
 // Sunrise-Sunset API
 export async function fetchSunTimes(lat: number, lon: number, date?: string): Promise<SunTimes> {
   const dateParam = date ? `&date=${date}` : '';
-  const url = `https://api.sunrise-sunset.org/json?lat=${lat}&lng=${lon}${dateParam}`;
+  const url = `https://api.sunrise-sunset.org/json?lat=${lat}&lng=${lon}${dateParam}&formatted=0`;
   const response = await fetch(url);
   if (!response.ok) throw new Error('Sunrise-Sunset API error');
   const data = await response.json();

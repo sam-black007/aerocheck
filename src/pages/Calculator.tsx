@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Plane, Save, Calculator, AlertTriangle, CheckCircle } from 'lucide-react';
 import { getAllAircraft, saveAircraft } from '../lib/db';
 import { calculateSuitabilityScore, generateAircraftId } from '../lib/calculations';
+import { calculateAdvancedPhysics, calculateFlightEnvelope, type AdvancedPhysics } from '../lib/advanced-physics';
 import { getDefaultWeather, getWeatherIcon } from '../lib/weather';
 import { AIRCRAFT_DEFAULTS } from '../types';
 import type { Aircraft, AircraftType, FlightCalculations } from '../types';
@@ -38,6 +39,8 @@ const INITIAL_AIRCRAFT: Partial<Aircraft> = {
 export default function CalculatorPage() {
   const [aircraft, setAircraft] = useState<Partial<Aircraft>>(INITIAL_AIRCRAFT);
   const [calculations, setCalculations] = useState<FlightCalculations | null>(null);
+  const [advancedPhysics, setAdvancedPhysics] = useState<AdvancedPhysics | null>(null);
+  const [flightEnvelope, setFlightEnvelope] = useState<ReturnType<typeof calculateFlightEnvelope> | null>(null);
   const [savedModels, setSavedModels] = useState<Aircraft[]>([]);
   const [savedMessage, setSavedMessage] = useState(false);
 
@@ -62,6 +65,8 @@ export default function CalculatorPage() {
       };
 
       setCalculations(calculateSuitabilityScore(fullAircraft, getDefaultWeather()));
+      setAdvancedPhysics(calculateAdvancedPhysics(fullAircraft, getDefaultWeather()));
+      setFlightEnvelope(calculateFlightEnvelope(fullAircraft));
     }
   }, [aircraft]);
 
@@ -110,10 +115,51 @@ export default function CalculatorPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div>
-        <h1 className="text-3xl font-bold text-white">Flight Calculator</h1>
-        <p className="mt-1 text-slate-400">Build and score your aircraft profile before the next flying session</p>
-      </div>
+      <section className="hero-panel px-6 py-7 lg:px-8">
+        <div className="grid gap-6 xl:grid-cols-[1.15fr,0.85fr]">
+          <div>
+            <div className="section-kicker">Performance design</div>
+            <h1 className="mt-3 font-display text-4xl font-semibold uppercase tracking-[0.12em] text-white">
+              Flight Calculator
+            </h1>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300">
+              Build a model profile, then review aerodynamic performance, energy margins, and the mission envelope in one pass.
+            </p>
+
+            <div className="mt-6 flex flex-wrap gap-2">
+              <span className="data-chip">15 aircraft classes</span>
+              <span className="data-chip">Advanced physics active</span>
+              <span className="data-chip">Standard atmosphere baseline</span>
+            </div>
+          </div>
+
+          <div className="card p-6">
+            <div className="section-kicker">Quick read</div>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="metric-tile">
+                <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Suitability</div>
+                <div className="mt-2 font-mono text-3xl text-white">{calculations?.suitabilityScore ?? '--'}</div>
+                <div className="mt-1 text-xs text-slate-400">{calculations?.suitabilityLevel || 'Awaiting setup'}</div>
+              </div>
+              <div className="metric-tile">
+                <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Cruise</div>
+                <div className="mt-2 font-mono text-3xl text-white">{advancedPhysics?.cruiseSpeed ?? '--'}</div>
+                <div className="mt-1 text-xs text-slate-400">mph estimated</div>
+              </div>
+              <div className="metric-tile">
+                <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Stall</div>
+                <div className="mt-2 font-mono text-3xl text-white">{advancedPhysics?.stallSpeed ?? '--'}</div>
+                <div className="mt-1 text-xs text-slate-400">mph floor</div>
+              </div>
+              <div className="metric-tile">
+                <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Climb</div>
+                <div className="mt-2 font-mono text-3xl text-white">{advancedPhysics?.rateOfClimb ?? '--'}</div>
+                <div className="mt-1 text-xs text-slate-400">fpm estimate</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.6fr,0.8fr]">
         <div className="space-y-6">
@@ -425,13 +471,29 @@ export default function CalculatorPage() {
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="rounded-lg bg-slate-700/50 p-3 text-center">
-                      <div className="text-xs text-slate-400">Est. Speed</div>
-                      <div className="font-mono text-lg text-sky-400">{calculations.estimatedSpeed.toFixed(0)} mph</div>
+                    <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-3 text-center">
+                      <div className="text-xs uppercase tracking-[0.22em] text-slate-500">Cruise</div>
+                      <div className="font-mono text-lg text-sky-300">{advancedPhysics?.cruiseSpeed ?? calculations.estimatedSpeed.toFixed(0)} mph</div>
                     </div>
-                    <div className="rounded-lg bg-slate-700/50 p-3 text-center">
-                      <div className="text-xs text-slate-400">Flight Time</div>
-                      <div className="font-mono text-lg text-sky-400">{calculations.flightTime} min</div>
+                    <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-3 text-center">
+                      <div className="text-xs uppercase tracking-[0.22em] text-slate-500">Flight Time</div>
+                      <div className="font-mono text-lg text-sky-300">{calculations.flightTime} min</div>
+                    </div>
+                    <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-3 text-center">
+                      <div className="text-xs uppercase tracking-[0.22em] text-slate-500">Stall</div>
+                      <div className="font-mono text-lg text-white">{advancedPhysics?.stallSpeed ?? '--'} mph</div>
+                    </div>
+                    <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-3 text-center">
+                      <div className="text-xs uppercase tracking-[0.22em] text-slate-500">Climb</div>
+                      <div className="font-mono text-lg text-white">{advancedPhysics?.rateOfClimb ?? '--'} fpm</div>
+                    </div>
+                    <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-3 text-center">
+                      <div className="text-xs uppercase tracking-[0.22em] text-slate-500">Glide</div>
+                      <div className="font-mono text-lg text-white">{advancedPhysics?.glideRatio ?? '--'}:1</div>
+                    </div>
+                    <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-3 text-center">
+                      <div className="text-xs uppercase tracking-[0.22em] text-slate-500">Motor Eff.</div>
+                      <div className="font-mono text-lg text-white">{advancedPhysics?.motorEfficiency ?? '--'}%</div>
                     </div>
                   </div>
                 </div>
@@ -464,6 +526,28 @@ export default function CalculatorPage() {
             )}
           </div>
 
+          <div className="card p-4">
+            <div className="section-kicker">Envelope</div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className="metric-tile">
+                <div className="text-xs uppercase tracking-[0.22em] text-slate-500">Min speed</div>
+                <div className="mt-2 font-mono text-lg text-white">{flightEnvelope?.minSpeed ?? '--'} mph</div>
+              </div>
+              <div className="metric-tile">
+                <div className="text-xs uppercase tracking-[0.22em] text-slate-500">Max speed</div>
+                <div className="mt-2 font-mono text-lg text-white">{flightEnvelope?.maxSpeed ?? '--'} mph</div>
+              </div>
+              <div className="metric-tile">
+                <div className="text-xs uppercase tracking-[0.22em] text-slate-500">Max altitude</div>
+                <div className="mt-2 font-mono text-lg text-white">{flightEnvelope?.maxAltitude ?? '--'} ft</div>
+              </div>
+              <div className="metric-tile">
+                <div className="text-xs uppercase tracking-[0.22em] text-slate-500">Range</div>
+                <div className="mt-2 font-mono text-lg text-white">{flightEnvelope?.maxRange ?? '--'} mi</div>
+              </div>
+            </div>
+          </div>
+
           {savedModels.length > 0 && (
             <div className="card p-4">
               <h3 className="mb-3 text-sm font-medium text-slate-300">Saved Models</h3>
@@ -471,7 +555,7 @@ export default function CalculatorPage() {
                 {savedModels.map((model) => (
                   <button
                     key={model.id}
-                    className="w-full rounded-lg bg-slate-700/50 p-2 text-left transition-colors hover:bg-slate-700"
+                    className="w-full rounded-[18px] border border-white/10 bg-white/[0.04] p-3 text-left transition-colors hover:bg-white/[0.08]"
                     onClick={() => loadModel(model)}
                   >
                     <div className="text-sm font-medium text-white">{model.name}</div>

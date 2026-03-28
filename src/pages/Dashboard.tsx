@@ -3,7 +3,7 @@ import { Plane, Wind, Thermometer, Gauge, AlertTriangle, TrendingUp, Clock, MapP
 import { getDefaultWeather, getWeatherIcon, getWindDirectionName } from '../lib/weather';
 import { getAllAircraft, getAllFlights, getSettings } from '../lib/db';
 import { calculateSuitabilityScore } from '../lib/calculations';
-import { fetchLiveWeatherByQuery } from '../lib/live-weather';
+import { fetchLocationBriefing } from '../lib/live-weather';
 import type { Aircraft, FlightLog, WeatherConditions } from '../types';
 
 export default function Dashboard() {
@@ -12,6 +12,8 @@ export default function Dashboard() {
   const [flights, setFlights] = useState<FlightLog[]>([]);
   const [selectedAircraft, setSelectedAircraft] = useState<Aircraft | null>(null);
   const [weatherLocation, setWeatherLocation] = useState('Offline demo');
+  const [weatherSource, setWeatherSource] = useState('Open-Meteo');
+  const [weatherDetail, setWeatherDetail] = useState('Global weather grid');
   const [weatherError, setWeatherError] = useState<string | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(true);
 
@@ -37,14 +39,18 @@ export default function Dashboard() {
       const locationQuery = settings?.defaultLocation?.trim() || 'New York, NY';
 
       try {
-        const liveWeather = await fetchLiveWeatherByQuery(locationQuery);
-        setWeather(liveWeather.weather);
-        setWeatherLocation(liveWeather.location.name);
+        const briefing = await fetchLocationBriefing(locationQuery);
+        setWeather(briefing.weather);
+        setWeatherLocation(briefing.location.name);
+        setWeatherSource(briefing.source);
+        setWeatherDetail(briefing.sourceDetail);
         setWeatherError(null);
       } catch (weatherIssue) {
         console.error('Failed to load live weather', weatherIssue);
         setWeather(getDefaultWeather());
         setWeatherLocation('Offline demo');
+        setWeatherSource('Fallback weather');
+        setWeatherDetail('Default briefing values');
         setWeatherError('Live weather unavailable');
       } finally {
         setWeatherLoading(false);
@@ -67,22 +73,50 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-white">Dashboard</h1>
-          <p className="mt-1 text-slate-400">Overview of your flying conditions</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className={`badge ${weatherError ? 'badge-warning' : 'badge-info'}`}>
-            <MapPin className="mr-1 h-3 w-3" />
-            {weatherLoading ? 'Loading weather...' : weatherLocation}
+      <section className="hero-panel px-6 py-7 lg:px-8">
+        <div className="grid gap-6 xl:grid-cols-[1.2fr,0.8fr]">
+          <div>
+            <div className="section-kicker">Mission control</div>
+            <h1 className="mt-3 font-display text-4xl font-semibold uppercase tracking-[0.12em] text-white">
+              Field Overview
+            </h1>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300">
+              Watch the current field picture, your aircraft roster, and the model readiness score from a single operations board.
+            </p>
+
+            <div className="mt-6 flex flex-wrap gap-2">
+              <span className={`badge ${weatherError ? 'badge-warning' : 'badge-info'}`}>
+                <MapPin className="mr-1 h-3 w-3" />
+                {weatherLoading ? 'Loading weather...' : weatherLocation}
+              </span>
+              <span className="data-chip">{weatherSource}</span>
+              <span className="data-chip">{weatherDetail}</span>
+              <span className="data-chip">{aircraft.length} aircraft profiles</span>
+            </div>
           </div>
-          <div className="badge badge-info">
-            <Plane className="mr-1 h-3 w-3" />
-            {aircraft.length} Models
+
+          <div className="card p-6">
+            <div className="section-kicker">Current outlook</div>
+            <div className="mt-4 flex items-center justify-between gap-4">
+              <div>
+                <div className="text-5xl">{getWeatherIcon(weather)}</div>
+                <div className="mt-3 text-4xl font-bold text-white">{weather.temperature} deg C</div>
+                <div className="mt-2 text-sm text-slate-300">{weather.description}</div>
+              </div>
+              <div className="grid grid-cols-1 gap-3">
+                <div className="metric-tile min-w-[9rem]">
+                  <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Wind</div>
+                  <div className="mt-2 font-mono text-xl text-white">{weather.windSpeed} mph</div>
+                </div>
+                <div className="metric-tile min-w-[9rem]">
+                  <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Visibility</div>
+                  <div className="mt-2 font-mono text-xl text-white">{weather.visibility} km</div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      </section>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr,1fr]">
         <div className="card p-6">

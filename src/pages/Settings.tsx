@@ -98,8 +98,8 @@ export default function SettingsPage() {
           </div>
         </div>
         <p className="text-sm text-slate-300">
-          AeroCheck is set up to use built-in public data sources first. Optional premium provider support can be added later
-          for broader coverage, but the normal UI flow should work without user-managed API setup.
+          AeroCheck now uses built-in public sources for the normal experience: NOAA weather observations and alerts where available,
+          Open-Meteo for global weather and air quality fallback, and airplanes.live for live ADS-B traffic.
         </p>
       </div>
 
