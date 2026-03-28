@@ -964,20 +964,20 @@
     <!-- Navigation -->
     <nav class="navbar">
         <div class="nav-container">
-            <a href="#" class="logo" onclick="showPage('dashboard')">
+            <a href="#dashboard" class="logo" onclick="showPage('dashboard')">
                 <i class="fas fa-plane-departure"></i>
                 aeroCheck
             </a>
             <div class="nav-links" id="navLinks">
-                <a href="#" class="nav-link active" data-page="dashboard">Dashboard</a>
-                <a href="#" class="nav-link" data-page="calculator">Calculator</a>
-                <a href="#" class="nav-link" data-page="weather">Weather</a>
-                <a href="#" class="nav-link" data-page="simulator">Simulator</a>
-                <a href="#" class="nav-link" data-page="flights">Flights</a>
-                <a href="#" class="nav-link" data-page="analytics">Analytics</a>
-                <a href="#" class="nav-link" data-page="compare">Compare</a>
-                <a href="#" class="nav-link" data-page="models">Models</a>
-                <a href="#" class="nav-link" data-page="settings">Settings</a>
+                <a href="#dashboard" class="nav-link active" data-page="dashboard">Dashboard</a>
+                <a href="#calculator" class="nav-link" data-page="calculator">Calculator</a>
+                <a href="#weather" class="nav-link" data-page="weather">Weather</a>
+                <a href="#simulator" class="nav-link" data-page="simulator">Simulator</a>
+                <a href="#flights" class="nav-link" data-page="flights">Flights</a>
+                <a href="#analytics" class="nav-link" data-page="analytics">Analytics</a>
+                <a href="#compare" class="nav-link" data-page="compare">Compare</a>
+                <a href="#models" class="nav-link" data-page="models">Models</a>
+                <a href="#settings" class="nav-link" data-page="settings">Settings</a>
             </div>
             <button class="mobile-menu-btn" onclick="toggleMobileMenu()">
                 <i class="fas fa-bars"></i>
@@ -1780,6 +1780,10 @@
                             <option value="helicopter">Helicopter</option>
                         </select>
                     </div>
+                    <div class="form-group">
+                        <label class="form-label">Default Weather Location</label>
+                        <input type="text" class="form-input" id="defaultLocation" placeholder="City, airport, or flying field">
+                    </div>
                     <button class="btn btn-primary" onclick="savePreferences()">
                         <i class="fas fa-save"></i> Save Preferences
                     </button>
@@ -1804,7 +1808,7 @@
                     <h3 class="card-title mb-4"><i class="fas fa-info-circle"></i> About aeroCheck</h3>
                     <div class="text-muted" style="font-size: 0.875rem;">
                         <p><strong>Version:</strong> 1.0.0</p>
-                        <p><strong>Build:</strong> React + TypeScript + Tailwind</p>
+                        <p><strong>Build:</strong> Single-file HTML, CSS, and JavaScript</p>
                         <p class="mt-4">aeroCheck is a comprehensive flight planning tool for hobbyist RC pilots. It combines advanced aircraft physics calculations with real-time weather data to help you plan safe and enjoyable flights.</p>
                     </div>
                 </div>
@@ -1852,7 +1856,8 @@
             settings: {
                 units: { distance: 'metric', temp: 'celsius', weight: 'grams' },
                 apiKeys: {},
-                defaultAircraft: 'fixed-wing'
+                defaultAircraft: 'fixed-wing',
+                defaultLocation: ''
             },
             timer: { running: false, startTime: null, elapsed: 0 },
             dashboardTimer: { running: false, startTime: null, elapsed: 0 }
@@ -1862,6 +1867,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             loadState();
             initNavigation();
+            syncSettingsForm();
             initAircraftGrid();
             initCompareGrid();
             initModelLibrary();
@@ -1870,6 +1876,8 @@
             loadFlights();
             updateDashboard();
             updateSimulator();
+            syncPageFromHash();
+            window.addEventListener('hashchange', syncPageFromHash);
             detectLocation();
         });
 
@@ -1877,7 +1885,23 @@
         function loadState() {
             const saved = localStorage.getItem('aerocheck_state');
             if (saved) {
-                state = { ...state, ...JSON.parse(saved) };
+                const parsed = JSON.parse(saved);
+                state = {
+                    ...state,
+                    ...parsed,
+                    settings: {
+                        ...state.settings,
+                        ...(parsed.settings || {}),
+                        units: {
+                            ...state.settings.units,
+                            ...(parsed.settings?.units || {})
+                        },
+                        apiKeys: {
+                            ...state.settings.apiKeys,
+                            ...(parsed.settings?.apiKeys || {})
+                        }
+                    }
+                };
             }
         }
 
@@ -1885,7 +1909,27 @@
             localStorage.setItem('aerocheck_state', JSON.stringify(state));
         }
 
+        function syncSettingsForm() {
+            document.getElementById('apiOpenWeather').value = state.settings.apiKeys.openWeather || '';
+            document.getElementById('apiWeatherAPI').value = state.settings.apiKeys.weatherAPI || '';
+            document.getElementById('apiTomorrow').value = state.settings.apiKeys.tomorrow || '';
+            document.getElementById('unitDistance').value = state.settings.units.distance || 'metric';
+            document.getElementById('unitTemp').value = state.settings.units.temp || 'celsius';
+            document.getElementById('unitWeight').value = state.settings.units.weight || 'grams';
+            document.getElementById('defaultAircraft').value = state.settings.defaultAircraft || 'fixed-wing';
+            document.getElementById('defaultLocation').value = state.settings.defaultLocation || '';
+        }
+
         // Navigation
+        function getValidPage(page) {
+            return document.getElementById(`page-${page}`) ? page : 'dashboard';
+        }
+
+        function syncPageFromHash() {
+            const requestedPage = getValidPage(window.location.hash.replace('#', '') || state.currentPage);
+            showPage(requestedPage, { updateHash: false });
+        }
+
         function initNavigation() {
             document.querySelectorAll('.nav-link').forEach(link => {
                 link.addEventListener('click', (e) => {
@@ -1896,14 +1940,24 @@
             });
         }
 
-        function showPage(page) {
-            state.currentPage = page;
+        function showPage(page, options = {}) {
+            const { updateHash = true } = options;
+            const nextPage = getValidPage(page);
+
+            state.currentPage = nextPage;
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
             document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-            document.getElementById(`page-${page}`).classList.add('active');
-            document.querySelector(`.nav-link[data-page="${page}"]`)?.classList.add('active');
+            document.getElementById(`page-${nextPage}`).classList.add('active');
+            document.querySelector(`.nav-link[data-page="${nextPage}"]`)?.classList.add('active');
+            document.getElementById('navLinks').classList.remove('open');
+
+            if (updateHash && window.location.hash !== `#${nextPage}`) {
+                window.location.hash = nextPage;
+            }
             
-            if (page === 'analytics') {
+            saveState();
+
+            if (nextPage === 'analytics') {
                 updateAnalytics();
             }
         }
@@ -2070,6 +2124,12 @@
 
         // Weather
         async function detectLocation() {
+            if (state.settings.defaultLocation) {
+                document.getElementById('weatherCity').value = state.settings.defaultLocation;
+                await fetchWeather(state.settings.defaultLocation);
+                return;
+            }
+
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(async (pos) => {
                     const lat = pos.coords.latitude;
@@ -2098,8 +2158,8 @@
             }
         }
 
-        async function fetchWeather() {
-            const city = document.getElementById('weatherCity').value;
+        async function fetchWeather(forcedCity) {
+            const city = (forcedCity || document.getElementById('weatherCity').value || '').trim();
             if (!city) return;
 
             try {
@@ -2110,6 +2170,10 @@
                 const geoData = await geoResponse.json();
                 
                 if (geoData.length > 0) {
+                    document.getElementById('weatherCity').value = city;
+                    document.getElementById('defaultLocation').value = city;
+                    state.settings.defaultLocation = city;
+                    saveState();
                     await fetchWeatherByCoords(geoData[0].lat, geoData[0].lon);
                 } else {
                     useDemoWeather();
@@ -2637,7 +2701,12 @@
                 weight: document.getElementById('unitWeight').value
             };
             state.settings.defaultAircraft = document.getElementById('defaultAircraft').value;
+            state.settings.defaultLocation = document.getElementById('defaultLocation').value.trim();
             saveState();
+            if (state.settings.defaultLocation) {
+                document.getElementById('weatherCity').value = state.settings.defaultLocation;
+                fetchWeather(state.settings.defaultLocation);
+            }
             alert('Preferences saved!');
         }
 

@@ -21,15 +21,17 @@ Simply open `index.html` in your browser - no build step required!
 
 ## Pages
 
-- `/` - Dashboard with weather overview
-- `/calculator` - Flight performance calculator
-- `/simulator` - Weather impact simulator
-- `/weather` - Detailed weather data
-- `/flights` - Flight log
-- `/analytics` - Performance analytics
-- `/compare` - Model comparison
-- `/models` - Aircraft library
-- `/settings` - Configuration
+This version is a single-page app with shareable hash routes:
+
+- `/#dashboard` - Dashboard with weather overview
+- `/#calculator` - Flight performance calculator
+- `/#simulator` - Weather impact simulator
+- `/#weather` - Detailed weather data
+- `/#flights` - Flight log
+- `/#analytics` - Performance analytics
+- `/#compare` - Model comparison
+- `/#models` - Aircraft library
+- `/#settings` - Configuration
 
 ## License
 
