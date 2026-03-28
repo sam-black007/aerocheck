@@ -6,6 +6,8 @@
   color-scheme: dark;
 }
 
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
 @layer base {
   html {
     scroll-behavior: smooth;
@@ -16,8 +18,8 @@
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     font-family: 'IBM Plex Sans', system-ui, sans-serif;
     background:
-      radial-gradient(circle at top, rgba(56, 189, 248, 0.16), transparent 28rem),
-      radial-gradient(circle at 85% 20%, rgba(249, 115, 22, 0.1), transparent 24rem),
+      radial-gradient(circle at top, rgba(56, 189, 248, 0.12), transparent 28rem),
+      radial-gradient(circle at 85% 20%, rgba(249, 115, 22, 0.08), transparent 24rem),
       linear-gradient(180deg, #091527 0%, #07111f 35%, #050c16 100%);
   }
 
@@ -27,19 +29,14 @@
     inset: 0;
     pointer-events: none;
     background-image:
-      linear-gradient(rgba(148, 163, 184, 0.05) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(148, 163, 184, 0.05) 1px, transparent 1px);
+      linear-gradient(rgba(148, 163, 184, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148, 163, 184, 0.04) 1px, transparent 1px);
     background-size: 96px 96px;
     mask-image: radial-gradient(circle at center, black, transparent 85%);
-    opacity: 0.32;
+    opacity: 0.28;
   }
 
-  h1,
-  h2,
-  h3,
-  h4,
-  h5,
-  h6 {
+  h1, h2, h3, h4, h5, h6 {
     font-family: 'Barlow Semi Condensed', 'IBM Plex Sans', sans-serif;
     letter-spacing: 0.02em;
   }
@@ -78,6 +75,40 @@
     @apply card transition-all duration-200 hover:border-sky-400/40 hover:shadow-[0_24px_70px_rgba(14,165,233,0.12)];
   }
   
+  .cockpit-panel {
+    @apply rounded-[28px] border border-sky-400/20 bg-slate-950/75 backdrop-blur-2xl;
+    box-shadow:
+      inset 0 1px 0 rgba(56, 189, 248, 0.1),
+      inset 0 0 40px rgba(56, 189, 248, 0.03),
+      0 22px 60px rgba(2, 8, 23, 0.35);
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.05) 0%, rgba(15, 23, 42, 0.9) 50%, rgba(56, 189, 248, 0.03) 100%);
+  }
+  
+  .gauge-panel {
+    @apply rounded-2xl border border-sky-400/15 bg-gradient-to-b from-sky-500/5 to-transparent p-4;
+    box-shadow: inset 0 1px 0 rgba(56, 189, 248, 0.1);
+  }
+  
+  .digital-display {
+    @apply font-mono text-2xl font-semibold tracking-wider text-sky-200;
+    text-shadow: 0 0 20px rgba(56, 189, 248, 0.5);
+  }
+  
+  .altitude-display {
+    @apply digital-display text-cyan-300;
+    text-shadow: 0 0 20px rgba(34, 211, 238, 0.5);
+  }
+  
+  .speed-display {
+    @apply digital-display text-emerald-300;
+    text-shadow: 0 0 20px rgba(52, 211, 153, 0.5);
+  }
+  
+  .heading-display {
+    @apply digital-display text-amber-300;
+    text-shadow: 0 0 20px rgba(251, 191, 36, 0.5);
+  }
+  
   .btn {
     @apply rounded-2xl px-4 py-2.5 font-medium transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50;
   }
@@ -95,11 +126,20 @@
     @apply btn border border-red-500/30 bg-red-500/[0.15] text-red-300 hover:bg-red-500/20;
   }
   
+  .btn-gauge {
+    @apply btn border border-sky-400/30 bg-gradient-to-b from-sky-500/10 to-sky-500/5 text-sky-200 hover:from-sky-500/15 hover:to-sky-500/10;
+    box-shadow: inset 0 1px 0 rgba(56, 189, 248, 0.1);
+  }
+  
   .input {
     @apply w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3
            text-white placeholder-slate-500
            focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/30
            transition-all duration-200;
+  }
+  
+  .input-cockpit {
+    @apply input border-sky-400/20 bg-slate-950/80 focus:border-cyan-400 focus:ring-cyan-500/30;
   }
   
   .label {
@@ -230,6 +270,73 @@
     animation: radarSweep 6s linear infinite;
     pointer-events: none;
   }
+  
+  .flight-card {
+    @apply card p-5 transition-all duration-200 hover:border-sky-400/30;
+  }
+  
+  .flight-route-line {
+    @apply relative flex items-center gap-2;
+  }
+  
+  .flight-route-line::before {
+    content: '';
+    @apply absolute left-2 top-1/2 h-px w-full bg-gradient-to-r from-sky-400/50 via-cyan-400/50 to-transparent;
+  }
+  
+  .aircraft-model-badge {
+    @apply inline-flex items-center gap-2 rounded-lg border border-sky-400/20 bg-sky-500/10 px-3 py-1.5 text-sm text-sky-200;
+  }
+  
+  .runway-indicator {
+    @apply flex items-center gap-2 rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-amber-200;
+  }
+  
+  .metar-display {
+    @apply rounded-xl border border-sky-400/15 bg-slate-950/80 p-4 font-mono text-sm leading-relaxed text-sky-100;
+    letter-spacing: 0.05em;
+  }
+  
+  .weather-forecast-card {
+    @apply card p-4 transition-all duration-200 hover:border-sky-400/30;
+  }
+  
+  .cloud-overlay {
+    @apply absolute inset-0 pointer-events-none overflow-hidden;
+  }
+  
+  .cloud-particle {
+    @apply absolute rounded-full bg-white/10 blur-xl;
+    animation: cloudDrift linear infinite;
+  }
+  
+  .compass-rose {
+    @apply relative w-32 h-32 rounded-full border-2 border-sky-400/30 bg-slate-950/50;
+    background: radial-gradient(circle, transparent 40%, rgba(56, 189, 248, 0.05) 100%);
+  }
+  
+  .compass-needle {
+    @apply absolute left-1/2 top-1/2 h-12 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full;
+    background: linear-gradient(to top, #ef4444 50%, #f8fafc 50%);
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+  }
+  
+  .windsock {
+    @apply relative h-16 w-8 overflow-hidden rounded-r-full;
+    background: linear-gradient(to right, #ef4444 0%, #ef4444 25%, #f8fafc 25%, #f8fafc 75%, #ef4444 75%);
+  }
+  
+  .rc-battery-indicator {
+    @apply flex items-center gap-1;
+  }
+  
+  .rc-battery-bar {
+    @apply h-4 w-3 rounded-sm bg-gradient-to-t;
+  }
+  
+  .rc-battery-bar.full { @apply bg-gradient-to-t from-green-500 to-green-400; }
+  .rc-battery-bar.medium { @apply bg-gradient-to-t from-yellow-500 to-yellow-400; }
+  .rc-battery-bar.low { @apply bg-gradient-to-t from-red-500 to-red-400; }
 }
 
 @layer utilities {
@@ -290,16 +397,24 @@
     font-weight: 600;
     color: #e2e8f0;
   }
+  
+  .glow-sky {
+    box-shadow: 0 0 20px rgba(56, 189, 248, 0.3), 0 0 40px rgba(56, 189, 248, 0.1);
+  }
+  
+  .glow-cyan {
+    box-shadow: 0 0 20px rgba(34, 211, 238, 0.3), 0 0 40px rgba(34, 211, 238, 0.1);
+  }
+  
+  .cockpit-border {
+    border: 1px solid rgba(56, 189, 248, 0.2);
+    box-shadow: inset 0 0 30px rgba(56, 189, 248, 0.05);
+  }
 }
 
 @keyframes radarSweep {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 @keyframes currentLocationPulse {
@@ -307,16 +422,31 @@
     transform: scale(0.9);
     opacity: 0.85;
   }
-
   70% {
     transform: scale(1.7);
     opacity: 0;
   }
-
   100% {
     transform: scale(1.7);
     opacity: 0;
   }
+}
+
+@keyframes cloudDrift {
+  0% { transform: translateX(-100%); opacity: 0; }
+  10% { opacity: 0.3; }
+  90% { opacity: 0.3; }
+  100% { transform: translateX(100vw); opacity: 0; }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 10px rgba(56, 189, 248, 0.3); }
+  50% { box-shadow: 0 0 25px rgba(56, 189, 248, 0.6); }
+}
+
+@keyframes aircraftBlink {
+  0%, 50%, 100% { opacity: 1; }
+  25%, 75% { opacity: 0.5; }
 }
 
 .aviation-map .leaflet-container {
@@ -389,34 +519,93 @@
 
 .flight-marker {
   display: flex;
-  height: 30px;
-  width: 30px;
+  height: 36px;
+  width: 36px;
   align-items: center;
   justify-content: center;
   color: #7dd3fc;
-  filter: drop-shadow(0 0 12px rgba(56, 189, 248, 0.35));
+  filter: drop-shadow(0 0 12px rgba(56, 189, 248, 0.5));
   transform: rotate(var(--heading));
-  transition: transform 0.2s ease, filter 0.2s ease;
+  transition: transform 0.3s ease, filter 0.3s ease;
 }
 
 .flight-marker svg {
-  height: 24px;
-  width: 24px;
+  height: 28px;
+  width: 28px;
   fill: currentColor;
 }
 
 .flight-marker.ground {
   color: #fbbf24;
-  filter: drop-shadow(0 0 12px rgba(251, 191, 36, 0.28));
+  filter: drop-shadow(0 0 12px rgba(251, 191, 36, 0.4));
 }
 
 .flight-marker.emergency {
   color: #f87171;
-  filter: drop-shadow(0 0 14px rgba(248, 113, 113, 0.38));
+  filter: drop-shadow(0 0 14px rgba(248, 113, 113, 0.5));
+  animation: aircraftBlink 1s infinite;
 }
 
 .flight-marker.selected {
   color: #f8fafc;
-  filter: drop-shadow(0 0 16px rgba(248, 250, 252, 0.48));
-  transform: rotate(var(--heading)) scale(1.1);
+  filter: drop-shadow(0 0 20px rgba(248, 250, 252, 0.6));
+  transform: rotate(var(--heading)) scale(1.15);
+}
+
+.flight-marker.selcall {
+  animation: pulseGlow 1.5s infinite;
+}
+
+.aircraft-type-narrowbody {
+  --marker-color: #38bdf8;
+}
+
+.aircraft-type-widebody {
+  --marker-color: #a78bfa;
+}
+
+.aircraft-type-regional {
+  --marker-color: #34d399;
+}
+
+.aircraft-type-ga {
+  --marker-color: #fbbf24;
+}
+
+.waypoint-marker {
+  display: flex;
+  height: 12px;
+  width: 12px;
+  align-items: center;
+  justify-content: center;
+  background: #38bdf8;
+  border: 2px solid #f8fafc;
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.5);
+}
+
+.route-line {
+  stroke: #38bdf8;
+  stroke-width: 2;
+  stroke-dasharray: 8 4;
+  fill: none;
+  opacity: 0.7;
+}
+
+.fade-in {
+  animation: fadeIn 0.5s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.slide-in-right {
+  animation: slideInRight 0.4s ease-out;
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(30px); }
+  to { opacity: 1; transform: translateX(0); }
 }
