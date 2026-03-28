@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import {
-  Plane, MapPin, Navigation, Clock, Gauge, Radio, AlertCircle, ArrowRight,
+  Plane, MapPin, Navigation, Clock, Gauge, Radio, AlertCircle, Globe,
   Wind, Eye, CloudRain, Thermometer, Compass, Activity, Maximize2,
   ChevronRight, Wifi, WifiOff, RefreshCw, Search, Filter, Layers,
-  AlertTriangle, Info, ArrowUp, ArrowDown, Pause, Play
+  AlertTriangle, Info, ArrowUp, ArrowDown, Pause, Play, Flag
 } from 'lucide-react';
 import OperationsMap from '../components/OperationsMap';
 import { getAllFlights, getAllAircraft, saveFlight, deleteFlight, getSettings } from '../lib/db';
@@ -13,6 +13,51 @@ import { fetchTrafficByCoordinates, type LiveTrafficSnapshot, type LiveTrafficFl
 import { fetchLocationBriefing, fetchLocationBriefingByCoordinates, type WeatherBriefing } from '../lib/live-weather';
 import { fetchCompleteWeatherBriefing, type WeatherBriefingComplete } from '../lib/forecast-api';
 import { getDefaultWeather, getWeatherIcon, getWindDirectionName } from '../lib/weather';
+
+const COUNTRY_BOUNDARIES: Record<string, { lat: number; lon: number; radiusNm: number; name: string }> = {
+  'US': { lat: 39.8283, lon: -98.5795, radiusNm: 500, name: 'United States' },
+  'United States': { lat: 39.8283, lon: -98.5795, radiusNm: 500, name: 'United States' },
+  'USA': { lat: 39.8283, lon: -98.5795, radiusNm: 500, name: 'United States' },
+  'GB': { lat: 55.3781, lon: -3.4360, radiusNm: 300, name: 'United Kingdom' },
+  'United Kingdom': { lat: 55.3781, lon: -3.4360, radiusNm: 300, name: 'United Kingdom' },
+  'UK': { lat: 55.3781, lon: -3.4360, radiusNm: 300, name: 'United Kingdom' },
+  'DE': { lat: 51.1657, lon: 10.4515, radiusNm: 250, name: 'Germany' },
+  'Germany': { lat: 51.1657, lon: 10.4515, radiusNm: 250, name: 'Germany' },
+  'FR': { lat: 46.2276, lon: 2.2137, radiusNm: 250, name: 'France' },
+  'France': { lat: 46.2276, lon: 2.2137, radiusNm: 250, name: 'France' },
+  'ES': { lat: 40.4637, lon: -3.7492, radiusNm: 250, name: 'Spain' },
+  'Spain': { lat: 40.4637, lon: -3.7492, radiusNm: 250, name: 'Spain' },
+  'IT': { lat: 41.8719, lon: 12.5674, radiusNm: 250, name: 'Italy' },
+  'Italy': { lat: 41.8719, lon: 12.5674, radiusNm: 250, name: 'Italy' },
+  'CA': { lat: 56.1304, lon: -106.3468, radiusNm: 500, name: 'Canada' },
+  'Canada': { lat: 56.1304, lon: -106.3468, radiusNm: 500, name: 'Canada' },
+  'AU': { lat: -25.2744, lon: 133.7751, radiusNm: 400, name: 'Australia' },
+  'Australia': { lat: -25.2744, lon: 133.7751, radiusNm: 400, name: 'Australia' },
+  'IN': { lat: 20.5937, lon: 78.9629, radiusNm: 400, name: 'India' },
+  'India': { lat: 20.5937, lon: 78.9629, radiusNm: 400, name: 'India' },
+  'BR': { lat: -14.2350, lon: -51.9253, radiusNm: 500, name: 'Brazil' },
+  'Brazil': { lat: -14.2350, lon: -51.9253, radiusNm: 500, name: 'Brazil' },
+  'MX': { lat: 23.6345, lon: -102.5528, radiusNm: 350, name: 'Mexico' },
+  'Mexico': { lat: 23.6345, lon: -102.5528, radiusNm: 350, name: 'Mexico' },
+  'JP': { lat: 36.2048, lon: 138.2529, radiusNm: 250, name: 'Japan' },
+  'Japan': { lat: 36.2048, lon: 138.2529, radiusNm: 250, name: 'Japan' },
+  'CN': { lat: 35.8617, lon: 104.1954, radiusNm: 500, name: 'China' },
+  'China': { lat: 35.8617, lon: 104.1954, radiusNm: 500, name: 'China' },
+};
+
+function getCountryFromCoordinates(lat: number, lon: number): string {
+  if (lat >= 24 && lat <= 50 && lon >= -125 && lon <= -66) return 'US';
+  if (lat >= 49 && lat <= 72 && lon >= -141 && lon <= -52) return 'CA';
+  if (lat >= 35 && lat <= 72 && lon >= -10 && lon <= 40) return 'EU';
+  if (lat >= -44 && lat <= -10 && lon >= 110 && lon <= 155) return 'AU';
+  if (lat >= 8 && lat <= 37 && lon >= 68 && lon <= 97) return 'IN';
+  if (lat >= -34 && lat <= -10 && lon >= -74 && lon <= -34) return 'BR';
+  return 'WORLD';
+}
+
+function getCountryInfo(countryCode: string): { lat: number; lon: number; radiusNm: number; name: string } {
+  return COUNTRY_BOUNDARIES[countryCode] || { lat: 40.0, lon: -95.0, radiusNm: 400, name: 'Default' };
+}
 
 function formatTime(seconds: number): string {
   if (seconds < 60) return `${seconds}s ago`;
@@ -211,7 +256,7 @@ export default function FlightsPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedFlightId, setSelectedFlightId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [radiusNm, setRadiusNm] = useState(80);
+  const [radiusNm, setRadiusNm] = useState(400);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
   const [showCloudOverlay, setShowCloudOverlay] = useState(true);
@@ -219,15 +264,20 @@ export default function FlightsPage() {
   const [filterGround, setFilterGround] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [centerLocation, setCenterLocation] = useState<{ name: string; lat: number; lon: number } | null>(null);
+  const [detectedCountry, setDetectedCountry] = useState<string | null>(null);
+  const [coverageMode, setCoverageMode] = useState<'country' | 'custom'>('country');
 
   const selectedFlight = trafficSnapshot?.flights.find(f => f.id === selectedFlightId) ?? null;
 
-  const loadTraffic = useCallback(async (lat: number, lon: number, locationName: string) => {
+  const countryInfo = detectedCountry ? getCountryInfo(detectedCountry) : null;
+
+  const loadTraffic = useCallback(async (lat: number, lon: number, locationName: string, customRadius?: number) => {
     setLoading(true);
     setError(null);
+    const radius = customRadius ?? radiusNm;
     try {
       const [traffic, weather] = await Promise.all([
-        fetchTrafficByCoordinates({ name: locationName, lat, lon }, radiusNm),
+        fetchTrafficByCoordinates({ name: locationName, lat, lon }, radius),
         fetchCompleteWeatherBriefing(lat, lon),
       ]);
       setTrafficSnapshot(traffic);
@@ -243,7 +293,7 @@ export default function FlightsPage() {
   }, [radiusNm]);
 
   useEffect(() => {
-    loadSavedLocation();
+    loadUserLocation();
   }, []);
 
   useEffect(() => {
@@ -254,29 +304,52 @@ export default function FlightsPage() {
     return () => clearInterval(interval);
   }, [autoRefresh, centerLocation, loadTraffic]);
 
+  async function loadUserLocation() {
+    setLocating(true);
+    try {
+      const currentLocation = await requestCurrentLocation();
+      const country = getCountryFromCoordinates(currentLocation.lat, currentLocation.lon);
+      const countryData = getCountryInfo(country);
+      
+      setDetectedCountry(country);
+      setRadiusNm(countryData.radiusNm);
+      
+      const briefing = await fetchLocationBriefingByCoordinates(currentLocation.lat, currentLocation.lon);
+      await loadTraffic(currentLocation.lat, currentLocation.lon, briefing.location.name, countryData.radiusNm);
+    } catch (err) {
+      console.error('Location failed:', err);
+      await loadSavedLocation();
+    } finally {
+      setLocating(false);
+    }
+  }
+
   async function loadSavedLocation() {
     try {
       const settings = await getSettings();
       const defaultLocation = settings?.defaultLocation?.trim() || 'New York, NY';
       const briefing = await fetchLocationBriefing(defaultLocation);
-      await loadTraffic(briefing.location.lat, briefing.location.lon, briefing.location.name);
+      await loadTraffic(briefing.location.lat, briefing.location.lon, briefing.location.name, 400);
     } catch (err) {
-      console.error('Load saved location failed:', err);
-      await loadTraffic(40.7128, -74.0060, 'New York, NY');
+      await loadTraffic(40.7128, -74.0060, 'New York, NY', 400);
     }
   }
 
-  async function handleUseCurrentLocation() {
-    setLocating(true);
-    try {
-      const currentLocation = await requestCurrentLocation();
-      const briefing = await fetchLocationBriefingByCoordinates(currentLocation.lat, currentLocation.lon);
-      await loadTraffic(currentLocation.lat, currentLocation.lon, briefing.location.name);
-    } catch (err) {
-      console.error('Location failed:', err);
-      setError('Could not get current location. Please try again.');
-    } finally {
-      setLocating(false);
+  function handleCoverageModeChange(mode: 'country' | 'custom') {
+    setCoverageMode(mode);
+    if (mode === 'country' && countryInfo) {
+      setRadiusNm(countryInfo.radiusNm);
+      if (centerLocation) {
+        loadTraffic(centerLocation.lat, centerLocation.lon, centerLocation.name, countryInfo.radiusNm);
+      }
+    }
+  }
+
+  function handleRadiusChange(radius: number) {
+    setRadiusNm(radius);
+    setCoverageMode('custom');
+    if (centerLocation) {
+      loadTraffic(centerLocation.lat, centerLocation.lon, centerLocation.name, radius);
     }
   }
 
@@ -284,10 +357,10 @@ export default function FlightsPage() {
     if (!searchQuery.trim()) return;
     try {
       const briefing = await fetchLocationBriefing(searchQuery);
+      setCoverageMode('custom');
       await loadTraffic(briefing.location.lat, briefing.location.lon, briefing.location.name);
       setSearchQuery('');
     } catch (err) {
-      console.error('Search failed:', err);
       setError('Location not found. Please try another search.');
     }
   }
@@ -312,12 +385,20 @@ export default function FlightsPage() {
       <section className="hero-panel px-6 py-7 lg:px-8">
         <div className="grid gap-6 lg:grid-cols-[1.2fr,0.8fr]">
           <div>
-            <div className="section-kicker">Live Traffic</div>
+            <div className="flex items-center gap-3">
+              <div className="section-kicker">Live Traffic</div>
+              {detectedCountry && (
+                <span className="flex items-center gap-1 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-medium text-emerald-300">
+                  <Flag className="h-3 w-3" />
+                  {countryInfo?.name || detectedCountry}
+                </span>
+              )}
+            </div>
             <h1 className="mt-3 font-display text-4xl font-bold uppercase tracking-wider text-white">
               Flight Radar
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300">
-              Real-time aircraft tracking with detailed flight information. Click any aircraft for complete flight data.
+              Real-time aircraft tracking for your region. Click any aircraft for complete flight data.
             </p>
 
             <div className="mt-6 flex flex-wrap gap-2">
@@ -329,7 +410,7 @@ export default function FlightsPage() {
               </span>
             </div>
 
-            <div className="mt-6 grid gap-4 lg:grid-cols-[1fr,10rem,10rem]">
+            <div className="mt-6 grid gap-4 lg:grid-cols-[1fr,12rem,10rem]">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" />
                 <input
@@ -345,13 +426,16 @@ export default function FlightsPage() {
               <select
                 className="input"
                 value={radiusNm}
-                onChange={e => setRadiusNm(Number(e.target.value))}
+                onChange={e => handleRadiusChange(Number(e.target.value))}
               >
-                <option value={40}>40 nm</option>
-                <option value={80}>80 nm</option>
-                <option value={120}>120 nm</option>
-                <option value={180}>180 nm</option>
-                <option value={250}>250 nm</option>
+                <option value={100}>100 nm</option>
+                <option value={200}>200 nm</option>
+                <option value={300}>300 nm</option>
+                <option value={400}>400 nm</option>
+                <option value={500}>500 nm</option>
+                <option value={600}>600 nm</option>
+                <option value={800}>800 nm</option>
+                <option value={1000}>1000 nm</option>
               </select>
 
               <button
@@ -366,8 +450,25 @@ export default function FlightsPage() {
 
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <button className="btn-secondary" onClick={handleUseCurrentLocation} disabled={locating}>
-                {locating ? 'Locating...' : 'Use My Location'}
+                {locating ? 'Detecting...' : 'Detect My Country'}
               </button>
+
+              <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 p-1">
+                <button
+                  className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${coverageMode === 'country' ? 'bg-sky-500/30 text-sky-200' : 'text-slate-400 hover:text-white'}`}
+                  onClick={() => handleCoverageModeChange('country')}
+                >
+                  <Globe className="mr-2 inline h-4 w-4" />
+                  Country-Wide
+                </button>
+                <button
+                  className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${coverageMode === 'custom' ? 'bg-sky-500/30 text-sky-200' : 'text-slate-400 hover:text-white'}`}
+                  onClick={() => handleCoverageModeChange('custom')}
+                >
+                  <MapPin className="mr-2 inline h-4 w-4" />
+                  Custom
+                </button>
+              </div>
 
               <button
                 className={`btn-gauge flex items-center gap-2 ${autoRefresh ? 'bg-sky-500/20' : ''}`}
@@ -384,38 +485,7 @@ export default function FlightsPage() {
                 <CloudRain className="h-4 w-4" />
                 Clouds
               </button>
-
-              <button
-                className={`btn-gauge flex items-center gap-2 ${showFilters ? 'bg-sky-500/20' : ''}`}
-                onClick={() => setShowFilters(!showFilters)}
-              >
-                <Filter className="h-4 w-4" />
-                Filters
-              </button>
             </div>
-
-            {showFilters && (
-              <div className="mt-4 flex flex-wrap gap-4 rounded-xl border border-sky-400/20 bg-sky-500/5 p-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={filterAirborne}
-                    onChange={e => setFilterAirborne(e.target.checked)}
-                    className="h-4 w-4 rounded border-sky-400 bg-slate-800 text-sky-500 focus:ring-sky-500"
-                  />
-                  <span className="text-sm text-slate-300">Airborne ({airborneCount})</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={filterGround}
-                    onChange={e => setFilterGround(e.target.checked)}
-                    className="h-4 w-4 rounded border-sky-400 bg-slate-800 text-sky-500 focus:ring-sky-500"
-                  />
-                  <span className="text-sm text-slate-300">On Ground ({groundCount})</span>
-                </label>
-              </div>
-            )}
 
             {error && (
               <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-4">
@@ -441,9 +511,11 @@ export default function FlightsPage() {
             </div>
 
             <div className="gauge-panel">
-              <div className="section-kicker">Avg Altitude</div>
-              <div className="altitude-display mt-2 text-3xl">{avgAltitude > 0 ? `${(avgAltitude / 1000).toFixed(1)}k` : '--'}</div>
-              <div className="mt-2 text-sm text-slate-400">feet MSL</div>
+              <div className="section-kicker">Coverage</div>
+              <div className="digital-display mt-2 text-2xl">{radiusNm} nm</div>
+              <div className="mt-2 text-sm text-slate-400">
+                {coverageMode === 'country' ? 'Country-wide' : 'Custom area'}
+              </div>
             </div>
 
             {weatherBriefing && (
@@ -466,7 +538,9 @@ export default function FlightsPage() {
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <div className="section-kicker">Coverage Area</div>
-                <h2 className="mt-1 text-xl font-semibold text-white">Live Map</h2>
+                <h2 className="mt-1 text-xl font-semibold text-white">
+                  Live Map {coverageMode === 'country' && countryInfo && `- ${countryInfo.name}`}
+                </h2>
               </div>
               <div className="flex items-center gap-4 text-sm text-slate-400">
                 {centerLocation && (
@@ -545,7 +619,7 @@ export default function FlightsPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredFlights.slice(0, 50).map(flight => (
+              {filteredFlights.slice(0, 100).map(flight => (
                 <tr
                   key={flight.id}
                   className={`cursor-pointer border-b border-white/5 transition-colors hover:bg-sky-500/10 ${selectedFlightId === flight.id ? 'bg-sky-500/15' : ''}`}
@@ -590,4 +664,24 @@ export default function FlightsPage() {
       </section>
     </div>
   );
+
+  async function handleUseCurrentLocation() {
+    setLocating(true);
+    try {
+      const currentLocation = await requestCurrentLocation();
+      const country = getCountryFromCoordinates(currentLocation.lat, currentLocation.lon);
+      const countryData = getCountryInfo(country);
+      
+      setDetectedCountry(country);
+      setCoverageMode('country');
+      setRadiusNm(countryData.radiusNm);
+      
+      const briefing = await fetchLocationBriefingByCoordinates(currentLocation.lat, currentLocation.lon);
+      await loadTraffic(currentLocation.lat, currentLocation.lon, briefing.location.name, countryData.radiusNm);
+    } catch (err) {
+      setError('Could not get current location.');
+    } finally {
+      setLocating(false);
+    }
+  }
 }
