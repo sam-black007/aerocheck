@@ -1,247 +1,238 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
-  Plane, MapPin, Navigation, Clock, Gauge, Radio, AlertCircle, Globe,
-  Wind, Eye, CloudRain, Thermometer, Compass, Activity, Maximize2,
-  ChevronRight, Wifi, WifiOff, RefreshCw, Search, Filter, Layers,
-  AlertTriangle, Info, ArrowUp, ArrowDown, Pause, Play, Flag
+  Plane, MapPin, Clock, Navigation, Gauge, Radio, AlertCircle,
+  RefreshCw, Search, Filter, AlertTriangle, Plus, Calendar, Star,
+  Wind, Eye, Thermometer, Droplets, ChevronRight, Trash2, Edit,
+  ArrowUp, ArrowDown, Check, X, CloudRain, Play, Pause, Wifi, WifiOff,
+  Flag, Globe, Settings, Download, Upload, Trash, PlaneLanding, PlaneTakeoff
 } from 'lucide-react';
 import OperationsMap from '../components/OperationsMap';
-import { getAllFlights, getAllAircraft, saveFlight, deleteFlight, getSettings } from '../lib/db';
+import { getAllFlights, getAllAircraft, saveFlight, deleteFlight, getSettings, exportData, importData } from '../lib/db';
 import { generateFlightId } from '../lib/calculations';
-import { readCachedCurrentLocation, requestCurrentLocation } from '../lib/current-location';
 import { fetchTrafficByCoordinates, type LiveTrafficSnapshot, type LiveTrafficFlight } from '../lib/live-traffic';
 import { fetchLocationBriefing, fetchLocationBriefingByCoordinates, type WeatherBriefing } from '../lib/live-weather';
 import { fetchCompleteWeatherBriefing, type WeatherBriefingComplete } from '../lib/forecast-api';
 import { getDefaultWeather, getWeatherIcon, getWindDirectionName } from '../lib/weather';
+import type { FlightLog, FlightRemark, FlightStatus, WeatherConditions } from '../types';
+import { REMARK_LABELS, STATUS_COLORS } from '../types';
 
-const COUNTRY_BOUNDARIES: Record<string, { lat: number; lon: number; radiusNm: number; name: string }> = {
-  'US': { lat: 39.8283, lon: -98.5795, radiusNm: 500, name: 'United States' },
-  'United States': { lat: 39.8283, lon: -98.5795, radiusNm: 500, name: 'United States' },
-  'USA': { lat: 39.8283, lon: -98.5795, radiusNm: 500, name: 'United States' },
-  'GB': { lat: 55.3781, lon: -3.4360, radiusNm: 300, name: 'United Kingdom' },
-  'United Kingdom': { lat: 55.3781, lon: -3.4360, radiusNm: 300, name: 'United Kingdom' },
-  'UK': { lat: 55.3781, lon: -3.4360, radiusNm: 300, name: 'United Kingdom' },
-  'DE': { lat: 51.1657, lon: 10.4515, radiusNm: 250, name: 'Germany' },
-  'Germany': { lat: 51.1657, lon: 10.4515, radiusNm: 250, name: 'Germany' },
-  'FR': { lat: 46.2276, lon: 2.2137, radiusNm: 250, name: 'France' },
-  'France': { lat: 46.2276, lon: 2.2137, radiusNm: 250, name: 'France' },
-  'ES': { lat: 40.4637, lon: -3.7492, radiusNm: 250, name: 'Spain' },
-  'Spain': { lat: 40.4637, lon: -3.7492, radiusNm: 250, name: 'Spain' },
-  'IT': { lat: 41.8719, lon: 12.5674, radiusNm: 250, name: 'Italy' },
-  'Italy': { lat: 41.8719, lon: 12.5674, radiusNm: 250, name: 'Italy' },
-  'CA': { lat: 56.1304, lon: -106.3468, radiusNm: 500, name: 'Canada' },
-  'Canada': { lat: 56.1304, lon: -106.3468, radiusNm: 500, name: 'Canada' },
-  'AU': { lat: -25.2744, lon: 133.7751, radiusNm: 400, name: 'Australia' },
-  'Australia': { lat: -25.2744, lon: 133.7751, radiusNm: 400, name: 'Australia' },
-  'IN': { lat: 20.5937, lon: 78.9629, radiusNm: 400, name: 'India' },
-  'India': { lat: 20.5937, lon: 78.9629, radiusNm: 400, name: 'India' },
-  'BR': { lat: -14.2350, lon: -51.9253, radiusNm: 500, name: 'Brazil' },
-  'Brazil': { lat: -14.2350, lon: -51.9253, radiusNm: 500, name: 'Brazil' },
-  'MX': { lat: 23.6345, lon: -102.5528, radiusNm: 350, name: 'Mexico' },
-  'Mexico': { lat: 23.6345, lon: -102.5528, radiusNm: 350, name: 'Mexico' },
-  'JP': { lat: 36.2048, lon: 138.2529, radiusNm: 250, name: 'Japan' },
-  'Japan': { lat: 36.2048, lon: 138.2529, radiusNm: 250, name: 'Japan' },
-  'CN': { lat: 35.8617, lon: 104.1954, radiusNm: 500, name: 'China' },
-  'China': { lat: 35.8617, lon: 104.1954, radiusNm: 500, name: 'China' },
-};
-
-function getCountryFromCoordinates(lat: number, lon: number): string {
-  if (lat >= 24 && lat <= 50 && lon >= -125 && lon <= -66) return 'US';
-  if (lat >= 49 && lat <= 72 && lon >= -141 && lon <= -52) return 'CA';
-  if (lat >= 35 && lat <= 72 && lon >= -10 && lon <= 40) return 'EU';
-  if (lat >= -44 && lat <= -10 && lon >= 110 && lon <= 155) return 'AU';
-  if (lat >= 8 && lat <= 37 && lon >= 68 && lon <= 97) return 'IN';
-  if (lat >= -34 && lat <= -10 && lon >= -74 && lon <= -34) return 'BR';
-  return 'WORLD';
+function FlightRemarkBadge({ remark }: { remark: FlightRemark }) {
+  const info = REMARK_LABELS[remark];
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${info.color} bg-current/10`}>
+      {info.icon} {info.label}
+    </span>
+  );
 }
 
-function getCountryInfo(countryCode: string): { lat: number; lon: number; radiusNm: number; name: string } {
-  return COUNTRY_BOUNDARIES[countryCode] || { lat: 40.0, lon: -95.0, radiusNm: 400, name: 'Default' };
-}
+function FlightLogForm({ 
+  aircraft, 
+  onSave, 
+  onCancel,
+  currentWeather 
+}: { 
+  aircraft: any[]; 
+  onSave: (flight: FlightLog) => void;
+  onCancel: () => void;
+  currentWeather: WeatherConditions;
+}) {
+  const [form, setForm] = useState({
+    aircraftId: aircraft[0]?.id || '',
+    aircraftName: aircraft[0]?.name || '',
+    date: new Date().toISOString().split('T')[0],
+    departureTime: new Date().toTimeString().slice(0, 5),
+    duration: 10,
+    location: '',
+    status: 'completed' as FlightStatus,
+    rating: 3,
+    remarks: ['safe-takeoff', 'safe-landing'] as FlightRemark[],
+    notes: '',
+    maxAltitude: 0,
+    maxSpeed: 0,
+    weather: currentWeather,
+  });
 
-function formatTime(seconds: number): string {
-  if (seconds < 60) return `${seconds}s ago`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  return `${Math.floor(seconds / 3600)}h ago`;
-}
+  const remarkOptions: FlightRemark[] = [
+    'perfect-flight', 'safe-takeoff', 'safe-landing', 'turbulent-flight',
+    'first-flight', 'maintenance-done', 'upgrade-done',
+    'partial-crash', 'crash-landed', 'total-crash',
+    'motor-issue', 'radio-glitch', 'battery-failure', 'lost-model'
+  ];
 
-function formatAltitude(feet: number | null): string {
-  return feet == null ? 'Ground' : `${feet.toLocaleString()} ft`;
-}
-
-function formatSpeed(knots: number): string {
-  return `${knots} kt`;
-}
-
-function getAircraftCategory(category: string): { name: string; color: string; icon: string } {
-  const cats: Record<string, { name: string; color: string; icon: string }> = {
-    'A1': { name: 'Light', color: '#34d399', icon: '🛩️' },
-    'A2': { name: 'Medium', color: '#38bdf8', icon: '✈️' },
-    'A3': { name: 'Heavy', color: '#a78bfa', icon: '🛫' },
-    'A4': { name: 'Helicopter', color: '#fbbf24', icon: '🚁' },
-    'B1': { name: 'Balloon', color: '#f472b6', icon: '🎈' },
-    'D1': { name: 'UAV', color: '#94a3b8', icon: '🤖' },
-  };
-  return cats[category] || { name: 'Unknown', color: '#94a3b8', icon: '✈️' };
-}
-
-function FlightDetailsPanel({ flight, onClose }: { flight: LiveTrafficFlight; onClose: () => void }) {
-  const status = flight.emergency !== 'none' ? 'emergency' : flight.isOnGround ? 'ground' : 'airborne';
-  const statusColors = {
-    emergency: 'text-red-400 bg-red-500/20 border-red-500/30',
-    ground: 'text-amber-400 bg-amber-500/20 border-amber-500/30',
-    airborne: 'text-emerald-400 bg-emerald-500/20 border-emerald-500/30',
+  const toggleRemark = (remark: FlightRemark) => {
+    setForm(prev => ({
+      ...prev,
+      remarks: prev.remarks.includes(remark)
+        ? prev.remarks.filter(r => r !== remark)
+        : [...prev.remarks, remark]
+    }));
   };
 
-  const verticalSpeed = flight.speedKnots > 0 ? Math.round((Math.random() - 0.5) * 500) : 0;
+  const handleSave = () => {
+    const flight: FlightLog = {
+      id: generateFlightId(),
+      aircraftId: form.aircraftId,
+      aircraftName: form.aircraftName,
+      date: form.date,
+      departureTime: form.departureTime,
+      duration: form.duration,
+      location: form.location,
+      weather: form.weather,
+      remarks: form.remarks,
+      status: form.status,
+      rating: form.rating,
+      notes: form.notes,
+      maxAltitude: form.maxAltitude,
+      maxSpeed: form.maxSpeed,
+      flightCount: 1,
+      createdAt: new Date().toISOString(),
+    };
+    onSave(flight);
+  };
 
   return (
-    <div className="cockpit-panel p-6 slide-in-right">
-      <div className="flex items-start justify-between gap-4">
+    <div className="card p-6 max-w-2xl mx-auto">
+      <h2 className="text-2xl font-bold text-white mb-6">Log New Flight</h2>
+      
+      <div className="space-y-5">
+        <div className="grid gap-5 sm:grid-cols-2">
+          <div>
+            <label className="label">Aircraft</label>
+            <select
+              className="input"
+              value={form.aircraftId}
+              onChange={e => {
+                const ac = aircraft.find(a => a.id === e.target.value);
+                setForm(prev => ({ ...prev, aircraftId: e.target.value, aircraftName: ac?.name || '' }));
+              }}
+            >
+              {aircraft.map(ac => (
+                <option key={ac.id} value={ac.id}>{ac.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="label">Date</label>
+            <input type="date" className="input" value={form.date} onChange={e => setForm(prev => ({ ...prev, date: e.target.value }))} />
+          </div>
+        </div>
+
+        <div className="grid gap-5 sm:grid-cols-3">
+          <div>
+            <label className="label">Departure Time</label>
+            <input type="time" className="input" value={form.departureTime} onChange={e => setForm(prev => ({ ...prev, departureTime: e.target.value }))} />
+          </div>
+          <div>
+            <label className="label">Duration (minutes)</label>
+            <input type="number" className="input" value={form.duration} onChange={e => setForm(prev => ({ ...prev, duration: parseInt(e.target.value) || 0 }))} />
+          </div>
+          <div>
+            <label className="label">Location</label>
+            <input type="text" className="input" placeholder="Flying field" value={form.location} onChange={e => setForm(prev => ({ ...prev, location: e.target.value }))} />
+          </div>
+        </div>
+
         <div>
-          <div className="section-kicker">Selected Target</div>
-          <div className="mt-2 flex items-center gap-3">
-            <h2 className="font-display text-3xl font-bold uppercase tracking-wider text-white">{flight.callsign}</h2>
-            <span className={`rounded-lg border px-3 py-1 text-sm font-semibold uppercase tracking-wider ${statusColors[status]}`}>
-              {status === 'emergency' ? 'Emergency' : status === 'ground' ? 'On Ground' : 'Airborne'}
-            </span>
-          </div>
-          <div className="mt-2 flex items-center gap-4 text-sm text-slate-400">
-            <span className="aircraft-model-badge">{flight.aircraftType}</span>
-            <span>{flight.registration}</span>
-            <span>{flight.description}</span>
-          </div>
-        </div>
-        <button onClick={onClose} className="rounded-xl border border-white/10 p-2 text-slate-400 hover:text-white hover:bg-white/5">
-          <ChevronRight className="h-5 w-5" />
-        </button>
-      </div>
-
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        <div className="gauge-panel text-center">
-          <div className="section-kicker">Altitude</div>
-          <div className="altitude-display mt-2 text-4xl">{formatAltitude(flight.altitudeFeet)}</div>
-          <div className="mt-2 flex items-center justify-center gap-2 text-sm text-slate-400">
-            {verticalSpeed >= 0 ? (
-              <ArrowUp className="h-4 w-4 text-emerald-400" />
-            ) : (
-              <ArrowDown className="h-4 w-4 text-red-400" />
-            )}
-            {Math.abs(verticalSpeed)} fpm
+          <label className="label">Flight Status</label>
+          <div className="grid grid-cols-4 gap-2">
+            {(['completed', 'planned', 'aborted', 'crashed'] as FlightStatus[]).map(status => (
+              <button
+                key={status}
+                onClick={() => setForm(prev => ({ ...prev, status }))}
+                className={`px-4 py-3 rounded-xl text-sm font-medium capitalize transition-all ${
+                  form.status === status
+                    ? `${STATUS_COLORS[status].bg} ${STATUS_COLORS[status].text} border ${STATUS_COLORS[status].border}`
+                    : 'bg-slate-800 text-slate-400 border border-slate-700 hover:border-slate-600'
+                }`}
+              >
+                {status === 'completed' && <Check className="h-4 w-4 inline mr-1" />}
+                {status === 'crashed' && <X className="h-4 w-4 inline mr-1" />}
+                {status}
+              </button>
+            ))}
           </div>
         </div>
 
-        <div className="gauge-panel text-center">
-          <div className="section-kicker">Ground Speed</div>
-          <div className="speed-display mt-2 text-4xl">{formatSpeed(flight.speedKnots)}</div>
-          <div className="mt-2 text-sm text-slate-400">True Airspeed</div>
+        <div>
+          <label className="label">Flight Remarks</label>
+          <div className="flex flex-wrap gap-2">
+            {remarkOptions.map(remark => (
+              <button
+                key={remark}
+                onClick={() => toggleRemark(remark)}
+                className={`px-3 py-2 rounded-xl text-sm font-medium transition-all ${
+                  form.remarks.includes(remark)
+                    ? 'bg-sky-500/30 text-sky-400 border border-sky-500/40'
+                    : 'bg-slate-800 text-slate-400 border border-slate-700 hover:border-slate-600'
+                }`}
+              >
+                {REMARK_LABELS[remark].icon} {REMARK_LABELS[remark].label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="gauge-panel text-center">
-          <div className="section-kicker">Heading</div>
-          <div className="heading-display mt-2 text-4xl">{flight.heading}°</div>
-          <div className="mt-2 text-sm text-slate-400">{getWindDirectionName(flight.heading)}</div>
+        <div>
+          <label className="label">Rating</label>
+          <div className="flex gap-2">
+            {[1, 2, 3, 4, 5].map(star => (
+              <button
+                key={star}
+                onClick={() => setForm(prev => ({ ...prev, rating: star }))}
+                className="p-2 transition-transform hover:scale-110"
+              >
+                <Star className={`h-8 w-8 ${star <= form.rating ? 'text-amber-400 fill-amber-400' : 'text-slate-600'}`} />
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
 
-      <div className="cockpit-border mt-6 rounded-2xl bg-slate-950/50 p-5">
-        <div className="section-kicker mb-4">Flight Information</div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-sky-500/10 p-2">
-              <MapPin className="h-5 w-5 text-sky-400" />
-            </div>
-            <div>
-              <div className="text-xs uppercase tracking-wider text-slate-500">Range</div>
-              <div className="font-mono text-lg font-semibold text-white">{flight.distanceNm} nm</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-emerald-500/10 p-2">
-              <Navigation className="h-5 w-5 text-emerald-400" />
-            </div>
-            <div>
-              <div className="text-xs uppercase tracking-wider text-slate-500">Bearing</div>
-              <div className="font-mono text-lg font-semibold text-white">{flight.relativeDirection}°</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-amber-500/10 p-2">
-              <Radio className="h-5 w-5 text-amber-400" />
-            </div>
-            <div>
-              <div className="text-xs uppercase tracking-wider text-slate-500">Squawk</div>
-              <div className="font-mono text-lg font-semibold text-white">{flight.squawk}</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-violet-500/10 p-2">
-              <Clock className="h-5 w-5 text-violet-400" />
-            </div>
-            <div>
-              <div className="text-xs uppercase tracking-wider text-slate-500">Last Seen</div>
-              <div className="font-mono text-lg font-semibold text-white">{formatTime(flight.lastSeenSeconds)}</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-rose-500/10 p-2">
-              <Activity className="h-5 w-5 text-rose-400" />
-            </div>
-            <div>
-              <div className="text-xs uppercase tracking-wider text-slate-500">Position Age</div>
-              <div className="font-mono text-lg font-semibold text-white">{formatTime(flight.lastPositionSeconds)}</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-cyan-500/10 p-2">
-              <Plane className="h-5 w-5 text-cyan-400" />
-            </div>
-            <div>
-              <div className="text-xs uppercase tracking-wider text-slate-500">Operator</div>
-              <div className="truncate text-lg font-semibold text-white">{flight.operator}</div>
+        <div>
+          <label className="label">Weather at Location</label>
+          <div className="card p-4 bg-slate-800/50">
+            <div className="grid grid-cols-4 gap-4 text-center">
+              <div>
+                <Thermometer className="h-5 w-5 mx-auto text-amber-400 mb-1" />
+                <div className="text-white font-semibold">{form.weather.temperature}°C</div>
+                <div className="text-xs text-slate-500">Temp</div>
+              </div>
+              <div>
+                <Wind className="h-5 w-5 mx-auto text-sky-400 mb-1" />
+                <div className="text-white font-semibold">{form.weather.windSpeed} mph</div>
+                <div className="text-xs text-slate-500">Wind</div>
+              </div>
+              <div>
+                <Eye className="h-5 w-5 mx-auto text-emerald-400 mb-1" />
+                <div className="text-white font-semibold">{form.weather.visibility} km</div>
+                <div className="text-xs text-slate-500">Visibility</div>
+              </div>
+              <div>
+                <Droplets className="h-5 w-5 mx-auto text-cyan-400 mb-1" />
+                <div className="text-white font-semibold">{form.weather.humidity}%</div>
+                <div className="text-xs text-slate-500">Humidity</div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {flight.emergency !== 'none' && (
-        <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-4">
-          <div className="flex items-center gap-3">
-            <AlertTriangle className="h-6 w-6 text-red-400" />
-            <div>
-              <div className="font-semibold text-red-300">Emergency Status: {flight.emergency}</div>
-              <div className="mt-1 text-sm text-red-200/80">Notify air traffic control immediately if this aircraft is in distress.</div>
-            </div>
-          </div>
+        <div>
+          <label className="label">Notes</label>
+          <textarea
+            className="input min-h-[100px]"
+            placeholder="Flight notes, observations, what to improve..."
+            value={form.notes}
+            onChange={e => setForm(prev => ({ ...prev, notes: e.target.value }))}
+          />
         </div>
-      )}
 
-      <div className="mt-6">
-        <div className="section-kicker mb-3">Position Data</div>
-        <div className="rounded-xl bg-slate-950/50 p-4 font-mono text-sm">
-          <div className="grid gap-2 sm:grid-cols-2">
-            <div className="flex justify-between">
-              <span className="text-slate-500">Latitude:</span>
-              <span className="text-sky-300">{flight.latitude.toFixed(6)}°</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">Longitude:</span>
-              <span className="text-sky-300">{flight.longitude.toFixed(6)}°</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">ICAO 24-bit:</span>
-              <span className="text-cyan-300">{flight.hex.toUpperCase()}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">Category:</span>
-              <span className="text-emerald-300">{flight.category}</span>
-            </div>
-          </div>
+        <div className="flex gap-3 pt-4">
+          <button onClick={handleSave} className="btn-primary flex-1 flex items-center justify-center gap-2">
+            <Check className="h-5 w-5" />
+            Save Flight Log
+          </button>
+          <button onClick={onCancel} className="btn-secondary px-6">
+            Cancel
+          </button>
         </div>
       </div>
     </div>
@@ -249,439 +240,271 @@ function FlightDetailsPanel({ flight, onClose }: { flight: LiveTrafficFlight; on
 }
 
 export default function FlightsPage() {
+  const [flights, setFlights] = useState<FlightLog[]>([]);
+  const [aircraft, setAircraft] = useState<any[]>([]);
+  const [showAddForm, setShowAddForm] = useState(false);
   const [trafficSnapshot, setTrafficSnapshot] = useState<LiveTrafficSnapshot | null>(null);
   const [weatherBriefing, setWeatherBriefing] = useState<WeatherBriefingComplete | null>(null);
   const [loading, setLoading] = useState(false);
-  const [locating, setLocating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedFlightId, setSelectedFlightId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [radiusNm, setRadiusNm] = useState(400);
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const [showFilters, setShowFilters] = useState(false);
-  const [showCloudOverlay, setShowCloudOverlay] = useState(true);
-  const [filterAirborne, setFilterAirborne] = useState(true);
-  const [filterGround, setFilterGround] = useState(true);
-  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
-  const [centerLocation, setCenterLocation] = useState<{ name: string; lat: number; lon: number } | null>(null);
-  const [detectedCountry, setDetectedCountry] = useState<string | null>(null);
-  const [coverageMode, setCoverageMode] = useState<'country' | 'custom'>('country');
+  const [filterStatus, setFilterStatus] = useState<FlightStatus | 'all'>('all');
+  const [selectedFlight, setSelectedFlight] = useState<FlightLog | null>(null);
 
-  const selectedFlight = trafficSnapshot?.flights.find(f => f.id === selectedFlightId) ?? null;
+  useEffect(() => {
+    loadData();
+  }, []);
 
-  const countryInfo = detectedCountry ? getCountryInfo(detectedCountry) : null;
-
-  const loadTraffic = useCallback(async (lat: number, lon: number, locationName: string, customRadius?: number) => {
+  async function loadData() {
     setLoading(true);
-    setError(null);
-    const radius = customRadius ?? radiusNm;
     try {
-      const [traffic, weather] = await Promise.all([
-        fetchTrafficByCoordinates({ name: locationName, lat, lon }, radius),
-        fetchCompleteWeatherBriefing(lat, lon),
-      ]);
-      setTrafficSnapshot(traffic);
-      setWeatherBriefing(weather);
-      setCenterLocation({ name: locationName, lat, lon });
-      setLastRefresh(new Date());
-    } catch (err) {
-      console.error('Traffic load failed:', err);
-      setError('Failed to load traffic data. Please try again.');
+      const [fl, ac] = await Promise.all([getAllFlights(), getAllAircraft()]);
+      setFlights(fl);
+      setAircraft(ac);
+
+      if (ac.length > 0) {
+        const settings = await getSettings();
+        const loc = settings?.defaultLocation?.trim() || 'New York';
+        try {
+          const briefing = await fetchLocationBriefing(loc);
+          const traffic = await fetchTrafficByCoordinates(briefing.location, 150);
+          const weather = await fetchCompleteWeatherBriefing(briefing.location.lat, briefing.location.lon);
+          setTrafficSnapshot(traffic);
+          setWeatherBriefing(weather);
+        } catch (e) {
+          console.log('Using default data');
+        }
+      }
+    } catch (error) {
+      console.error('Load error:', error);
     } finally {
       setLoading(false);
     }
-  }, [radiusNm]);
-
-  useEffect(() => {
-    loadUserLocation();
-  }, []);
-
-  useEffect(() => {
-    if (!autoRefresh || !centerLocation) return;
-    const interval = setInterval(() => {
-      loadTraffic(centerLocation.lat, centerLocation.lon, centerLocation.name);
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [autoRefresh, centerLocation, loadTraffic]);
-
-  async function loadUserLocation() {
-    setLocating(true);
-    try {
-      const currentLocation = await requestCurrentLocation();
-      const country = getCountryFromCoordinates(currentLocation.lat, currentLocation.lon);
-      const countryData = getCountryInfo(country);
-      
-      setDetectedCountry(country);
-      setRadiusNm(countryData.radiusNm);
-      
-      const briefing = await fetchLocationBriefingByCoordinates(currentLocation.lat, currentLocation.lon);
-      await loadTraffic(currentLocation.lat, currentLocation.lon, briefing.location.name, countryData.radiusNm);
-    } catch (err) {
-      console.error('Location failed:', err);
-      await loadSavedLocation();
-    } finally {
-      setLocating(false);
-    }
   }
 
-  async function loadSavedLocation() {
-    try {
-      const settings = await getSettings();
-      const defaultLocation = settings?.defaultLocation?.trim() || 'New York, NY';
-      const briefing = await fetchLocationBriefing(defaultLocation);
-      await loadTraffic(briefing.location.lat, briefing.location.lon, briefing.location.name, 400);
-    } catch (err) {
-      await loadTraffic(40.7128, -74.0060, 'New York, NY', 400);
-    }
+  async function handleSaveFlight(flight: FlightLog) {
+    await saveFlight(flight);
+    await loadData();
+    setShowAddForm(false);
   }
 
-  function handleCoverageModeChange(mode: 'country' | 'custom') {
-    setCoverageMode(mode);
-    if (mode === 'country' && countryInfo) {
-      setRadiusNm(countryInfo.radiusNm);
-      if (centerLocation) {
-        loadTraffic(centerLocation.lat, centerLocation.lon, centerLocation.name, countryInfo.radiusNm);
-      }
-    }
-  }
-
-  function handleRadiusChange(radius: number) {
-    setRadiusNm(radius);
-    setCoverageMode('custom');
-    if (centerLocation) {
-      loadTraffic(centerLocation.lat, centerLocation.lon, centerLocation.name, radius);
-    }
-  }
-
-  async function handleSearch() {
-    if (!searchQuery.trim()) return;
-    try {
-      const briefing = await fetchLocationBriefing(searchQuery);
-      setCoverageMode('custom');
-      await loadTraffic(briefing.location.lat, briefing.location.lon, briefing.location.name);
-      setSearchQuery('');
-    } catch (err) {
-      setError('Location not found. Please try another search.');
+  async function handleDeleteFlight(id: string) {
+    if (confirm('Delete this flight log?')) {
+      await deleteFlight(id);
+      await loadData();
+      setSelectedFlight(null);
     }
   }
 
   const filteredFlights = useMemo(() => {
-    if (!trafficSnapshot?.flights) return [];
-    return trafficSnapshot.flights.filter(flight => {
-      if (filterAirborne && !flight.isOnGround) return true;
-      if (filterGround && flight.isOnGround) return true;
-      return false;
+    return flights.filter(f => {
+      if (filterStatus !== 'all' && f.status !== filterStatus) return false;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        return f.aircraftName.toLowerCase().includes(q) || 
+               f.location.toLowerCase().includes(q) ||
+               f.notes.toLowerCase().includes(q);
+      }
+      return true;
     });
-  }, [trafficSnapshot?.flights, filterAirborne, filterGround]);
+  }, [flights, filterStatus, searchQuery]);
 
-  const airborneCount = trafficSnapshot?.flights.filter(f => !f.isOnGround).length ?? 0;
-  const groundCount = trafficSnapshot?.flights.filter(f => f.isOnGround).length ?? 0;
-  const avgAltitude = airborneCount > 0
-    ? Math.round((trafficSnapshot?.flights.filter(f => !f.isOnGround).reduce((sum, f) => sum + (f.altitudeFeet ?? 0), 0) ?? 0) / airborneCount)
+  const totalTime = flights.reduce((sum, f) => sum + f.duration, 0);
+  const avgRating = flights.length > 0 
+    ? (flights.reduce((sum, f) => sum + f.rating, 0) / flights.length).toFixed(1)
+    : '0.0';
+  const successRate = flights.length > 0
+    ? Math.round((flights.filter(f => f.status === 'completed').length / flights.length) * 100)
     : 0;
+
+  if (showAddForm) {
+    return (
+      <div className="animate-fade-in">
+        <FlightLogForm
+          aircraft={aircraft}
+          currentWeather={weatherBriefing?.current || getDefaultWeather()}
+          onSave={handleSaveFlight}
+          onCancel={() => setShowAddForm(false)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <section className="hero-panel px-6 py-7 lg:px-8">
-        <div className="grid gap-6 lg:grid-cols-[1.2fr,0.8fr]">
-          <div>
-            <div className="flex items-center gap-3">
-              <div className="section-kicker">Live Traffic</div>
-              {detectedCountry && (
-                <span className="flex items-center gap-1 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-medium text-emerald-300">
-                  <Flag className="h-3 w-3" />
-                  {countryInfo?.name || detectedCountry}
-                </span>
-              )}
-            </div>
-            <h1 className="mt-3 font-display text-4xl font-bold uppercase tracking-wider text-white">
-              Flight Radar
-            </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300">
-              Real-time aircraft tracking for your region. Click any aircraft for complete flight data.
-            </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-white">Flight Log</h1>
+          <p className="text-slate-400 mt-1">Track and analyze your RC flights</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button onClick={loadData} className="btn-secondary flex items-center gap-2" disabled={loading}>
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+          <button onClick={() => setShowAddForm(true)} className="btn-primary flex items-center gap-2">
+            <Plus className="h-4 w-4" />
+            Log Flight
+          </button>
+        </div>
+      </div>
 
-            <div className="mt-6 flex flex-wrap gap-2">
-              <span className="data-chip">{trafficSnapshot?.source || 'ADS-B Network'}</span>
-              {lastRefresh && <span className="data-chip">Updated {lastRefresh.toLocaleTimeString()}</span>}
-              <span className="badge-success flex items-center gap-1">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-                Live
-              </span>
-            </div>
+      <div className="grid gap-5 lg:grid-cols-4">
+        <div className="stat-card">
+          <div className="text-3xl font-bold text-white">{flights.length}</div>
+          <div className="text-sm text-slate-400">Total Flights</div>
+        </div>
+        <div className="stat-card">
+          <div className="text-3xl font-bold text-white">{Math.floor(totalTime / 60)}h {totalTime % 60}m</div>
+          <div className="text-sm text-slate-400">Total Time</div>
+        </div>
+        <div className="stat-card">
+          <div className="text-3xl font-bold text-amber-400">{avgRating}</div>
+          <div className="text-sm text-slate-400">Avg Rating</div>
+        </div>
+        <div className="stat-card">
+          <div className="text-3xl font-bold text-emerald-400">{successRate}%</div>
+          <div className="text-sm text-slate-400">Success Rate</div>
+        </div>
+      </div>
 
-            <div className="mt-6 grid gap-4 lg:grid-cols-[1fr,12rem,10rem]">
+      <div className="card overflow-hidden">
+        <div className="p-5 border-b border-slate-700">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex-1 min-w-[200px]">
               <div className="relative">
-                <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" />
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-500" />
                 <input
                   type="text"
                   className="input pl-11"
-                  placeholder="Search airport, city, or coordinates..."
+                  placeholder="Search flights..."
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleSearch()}
                 />
               </div>
-
-              <select
-                className="input"
-                value={radiusNm}
-                onChange={e => handleRadiusChange(Number(e.target.value))}
-              >
-                <option value={100}>100 nm</option>
-                <option value={200}>200 nm</option>
-                <option value={300}>300 nm</option>
-                <option value={400}>400 nm</option>
-                <option value={500}>500 nm</option>
-                <option value={600}>600 nm</option>
-                <option value={800}>800 nm</option>
-                <option value={1000}>1000 nm</option>
-              </select>
-
-              <button
-                className="btn-primary flex items-center justify-center gap-2"
-                onClick={() => centerLocation && loadTraffic(centerLocation.lat, centerLocation.lon, centerLocation.name)}
-                disabled={loading}
-              >
-                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                Refresh
-              </button>
             </div>
-
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <button className="btn-secondary" onClick={handleUseCurrentLocation} disabled={locating}>
-                {locating ? 'Detecting...' : 'Detect My Country'}
-              </button>
-
-              <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 p-1">
+            <div className="flex gap-2">
+              {(['all', 'completed', 'planned', 'aborted', 'crashed'] as const).map(status => (
                 <button
-                  className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${coverageMode === 'country' ? 'bg-sky-500/30 text-sky-200' : 'text-slate-400 hover:text-white'}`}
-                  onClick={() => handleCoverageModeChange('country')}
+                  key={status}
+                  onClick={() => setFilterStatus(status)}
+                  className={`px-4 py-2 rounded-xl text-sm font-medium capitalize transition-all ${
+                    filterStatus === status
+                      ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30'
+                      : 'bg-slate-800 text-slate-400 border border-slate-700 hover:border-slate-600'
+                  }`}
                 >
-                  <Globe className="mr-2 inline h-4 w-4" />
-                  Country-Wide
+                  {status}
                 </button>
-                <button
-                  className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${coverageMode === 'custom' ? 'bg-sky-500/30 text-sky-200' : 'text-slate-400 hover:text-white'}`}
-                  onClick={() => handleCoverageModeChange('custom')}
-                >
-                  <MapPin className="mr-2 inline h-4 w-4" />
-                  Custom
-                </button>
-              </div>
-
-              <button
-                className={`btn-gauge flex items-center gap-2 ${autoRefresh ? 'bg-sky-500/20' : ''}`}
-                onClick={() => setAutoRefresh(!autoRefresh)}
-              >
-                {autoRefresh ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-                {autoRefresh ? 'Auto' : 'Paused'}
-              </button>
-
-              <button
-                className={`btn-gauge flex items-center gap-2 ${showCloudOverlay ? 'bg-sky-500/20' : ''}`}
-                onClick={() => setShowCloudOverlay(!showCloudOverlay)}
-              >
-                <CloudRain className="h-4 w-4" />
-                Clouds
-              </button>
+              ))}
             </div>
-
-            {error && (
-              <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-4">
-                <div className="flex items-center gap-3 text-red-300">
-                  <AlertCircle className="h-5 w-5" />
-                  {error}
-                </div>
-              </div>
-            )}
           </div>
+        </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="gauge-panel">
-              <div className="section-kicker">Total Tracked</div>
-              <div className="digital-display mt-2 text-4xl">{trafficSnapshot?.flights.length ?? 0}</div>
-              <div className="mt-2 text-sm text-slate-400">Aircraft in range</div>
-            </div>
-
-            <div className="gauge-panel">
-              <div className="section-kicker">Airborne</div>
-              <div className="altitude-display mt-2 text-4xl">{airborneCount}</div>
-              <div className="mt-2 text-sm text-slate-400">In flight</div>
-            </div>
-
-            <div className="gauge-panel">
-              <div className="section-kicker">Coverage</div>
-              <div className="digital-display mt-2 text-2xl">{radiusNm} nm</div>
-              <div className="mt-2 text-sm text-slate-400">
-                {coverageMode === 'country' ? 'Country-wide' : 'Custom area'}
-              </div>
-            </div>
-
-            {weatherBriefing && (
-              <div className="gauge-panel">
-                <div className="section-kicker">Conditions</div>
-                <div className="mt-2 flex items-center gap-3">
-                  <span className="text-3xl">{getWeatherIcon(weatherBriefing.current)}</span>
-                  <div>
-                    <div className="digital-display text-2xl">{weatherBriefing.current.temperature}°C</div>
-                    <div className="text-xs text-slate-400">{weatherBriefing.current.description}</div>
+        <div className="divide-y divide-slate-700/50">
+          {filteredFlights.length > 0 ? filteredFlights.map(flight => (
+            <div
+              key={flight.id}
+              className={`p-5 hover:bg-slate-800/50 transition-all cursor-pointer ${
+                selectedFlight?.id === flight.id ? 'bg-sky-500/10 border-l-4 border-sky-500' : ''
+              }`}
+              onClick={() => setSelectedFlight(selectedFlight?.id === flight.id ? null : flight)}
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className={`px-3 py-1 rounded-full text-xs font-semibold uppercase ${STATUS_COLORS[flight.status].bg} ${STATUS_COLORS[flight.status].text} ${STATUS_COLORS[flight.status].border} border`}>
+                      {flight.status}
+                    </span>
+                    {flight.remarks.slice(0, 3).map((remark, i) => (
+                      <span key={i} className="text-xs text-slate-500">{REMARK_LABELS[remark]?.icon}</span>
+                    ))}
+                  </div>
+                  <h3 className="text-lg font-semibold text-white">{flight.aircraftName}</h3>
+                  <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-slate-400">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="h-4 w-4" />
+                      {new Date(flight.date).toLocaleDateString()}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-4 w-4" />
+                      {flight.duration} min
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <MapPin className="h-4 w-4" />
+                      {flight.location || 'Unknown'}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Thermometer className="h-4 w-4" />
+                      {flight.weather?.temperature}°C
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Wind className="h-4 w-4" />
+                      {flight.weather?.windSpeed} mph
+                    </span>
                   </div>
                 </div>
+                <div className="flex items-center gap-4">
+                  <div className="flex gap-1">
+                    {[1, 2, 3, 4, 5].map(star => (
+                      <Star key={star} className={`h-4 w-4 ${star <= flight.rating ? 'text-amber-400 fill-amber-400' : 'text-slate-600'}`} />
+                    ))}
+                  </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDeleteFlight(flight.id); }}
+                    className="p-2 text-slate-500 hover:text-red-400 transition-colors"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
-            )}
-          </div>
-        </div>
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-[1fr,400px]">
-          <div>
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <div className="section-kicker">Coverage Area</div>
-                <h2 className="mt-1 text-xl font-semibold text-white">
-                  Live Map {coverageMode === 'country' && countryInfo && `- ${countryInfo.name}`}
-                </h2>
-              </div>
-              <div className="flex items-center gap-4 text-sm text-slate-400">
-                {centerLocation && (
-                  <span className="flex items-center gap-1">
-                    <MapPin className="h-4 w-4 text-sky-400" />
-                    {centerLocation.name}
-                  </span>
-                )}
-                <span>{radiusNm} nm radius</span>
-              </div>
+              {selectedFlight?.id === flight.id && (
+                <div className="mt-4 pt-4 border-t border-slate-700/50 animate-fade-in">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <h4 className="text-sm font-semibold text-slate-400 mb-2">Flight Remarks</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {flight.remarks.map(remark => (
+                          <FlightRemarkBadge key={remark} remark={remark} />
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-semibold text-slate-400 mb-2">Weather Conditions</h4>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div>Temp: <span className="text-white">{flight.weather?.temperature}°C</span></div>
+                        <div>Wind: <span className="text-white">{flight.weather?.windSpeed} mph</span></div>
+                        <div>Humidity: <span className="text-white">{flight.weather?.humidity}%</span></div>
+                        <div>Visibility: <span className="text-white">{flight.weather?.visibility} km</span></div>
+                      </div>
+                    </div>
+                  </div>
+                  {flight.notes && (
+                    <div className="mt-4">
+                      <h4 className="text-sm font-semibold text-slate-400 mb-2">Notes</h4>
+                      <p className="text-sm text-slate-300 bg-slate-800/50 rounded-xl p-4">{flight.notes}</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-
-            <OperationsMap
-              center={centerLocation ?? null}
-              flights={filteredFlights}
-              radiusNm={radiusNm}
-              selectedFlightId={selectedFlightId}
-              onFlightSelect={setSelectedFlightId}
-              weatherSummary={weatherBriefing ? {
-                description: weatherBriefing.current.description,
-                temperature: weatherBriefing.current.temperature,
-                visibility: weatherBriefing.current.visibility,
-                windSpeed: weatherBriefing.current.windSpeed,
-                windDirection: weatherBriefing.current.windDirection,
-              } : null}
-              cloudLayers={weatherBriefing?.cloudLayers ?? []}
-              showCloudOverlay={showCloudOverlay}
-            />
-          </div>
-
-          {selectedFlight ? (
-            <FlightDetailsPanel flight={selectedFlight} onClose={() => setSelectedFlightId(null)} />
-          ) : (
-            <div className="cockpit-panel flex items-center justify-center p-8">
-              <div className="text-center">
-                <Plane className="mx-auto h-12 w-12 text-sky-400/50" />
-                <div className="mt-4 text-lg font-semibold text-slate-300">Select an Aircraft</div>
-                <div className="mt-2 text-sm text-slate-500">Click on any aircraft on the map to view detailed flight information</div>
-              </div>
+          )) : (
+            <div className="p-12 text-center">
+              <Plane className="h-16 w-16 mx-auto text-slate-600 mb-4" />
+              <h3 className="text-xl font-semibold text-slate-300 mb-2">No flights found</h3>
+              <p className="text-slate-500 mb-4">
+                {searchQuery || filterStatus !== 'all' 
+                  ? 'Try adjusting your search or filters'
+                  : 'Start logging your RC flights to track your progress'}
+              </p>
+              <button onClick={() => setShowAddForm(true)} className="btn-primary inline-flex items-center gap-2">
+                <Plus className="h-4 w-4" />
+                Log Your First Flight
+              </button>
             </div>
           )}
         </div>
-      </section>
-
-      <section className="card overflow-hidden">
-        <div className="border-b border-white/10 px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="section-kicker">Traffic List</div>
-              <h2 className="mt-1 text-xl font-semibold text-white">Aircraft in Range ({filteredFlights.length})</h2>
-            </div>
-            <div className="flex items-center gap-4 text-sm">
-              <span className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                Airborne
-              </span>
-              <span className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-amber-400" />
-                Ground
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div className="max-h-[400px] overflow-y-auto">
-          <table className="w-full">
-            <thead className="sticky top-0 bg-slate-950/95 backdrop-blur">
-              <tr className="border-b border-white/10 text-left text-xs uppercase tracking-[0.2em] text-slate-500">
-                <th className="px-4 py-3">Callsign</th>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">Altitude</th>
-                <th className="px-4 py-3">Speed</th>
-                <th className="px-4 py-3">Heading</th>
-                <th className="px-4 py-3">Distance</th>
-                <th className="px-4 py-3">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredFlights.slice(0, 100).map(flight => (
-                <tr
-                  key={flight.id}
-                  className={`cursor-pointer border-b border-white/5 transition-colors hover:bg-sky-500/10 ${selectedFlightId === flight.id ? 'bg-sky-500/15' : ''}`}
-                  onClick={() => setSelectedFlightId(flight.id)}
-                >
-                  <td className="px-4 py-3">
-                    <div className="font-semibold text-white">{flight.callsign}</div>
-                    <div className="text-xs text-slate-500">{flight.registration}</div>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-slate-300">
-                    <div>{flight.aircraftType}</div>
-                    <div className="text-xs text-slate-500">{flight.operator.split(' ')[0]}</div>
-                  </td>
-                  <td className="px-4 py-3 font-mono text-sm text-slate-300">
-                    {formatAltitude(flight.altitudeFeet)}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-sm text-slate-300">
-                    {formatSpeed(flight.speedKnots)}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-sm text-slate-300">
-                    {flight.heading}°
-                  </td>
-                  <td className="px-4 py-3 font-mono text-sm text-slate-300">
-                    {flight.distanceNm} nm
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`badge ${flight.isOnGround ? 'badge-warning' : 'badge-success'}`}>
-                      {flight.isOnGround ? 'Ground' : 'Airborne'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          {filteredFlights.length === 0 && (
-            <div className="px-6 py-12 text-center text-slate-400">
-              {loading ? 'Loading traffic data...' : 'No aircraft in range matching current filters.'}
-            </div>
-          )}
-        </div>
-      </section>
+      </div>
     </div>
   );
-
-  async function handleUseCurrentLocation() {
-    setLocating(true);
-    try {
-      const currentLocation = await requestCurrentLocation();
-      const country = getCountryFromCoordinates(currentLocation.lat, currentLocation.lon);
-      const countryData = getCountryInfo(country);
-      
-      setDetectedCountry(country);
-      setCoverageMode('country');
-      setRadiusNm(countryData.radiusNm);
-      
-      const briefing = await fetchLocationBriefingByCoordinates(currentLocation.lat, currentLocation.lon);
-      await loadTraffic(currentLocation.lat, currentLocation.lon, briefing.location.name, countryData.radiusNm);
-    } catch (err) {
-      setError('Could not get current location.');
-    } finally {
-      setLocating(false);
-    }
-  }
 }

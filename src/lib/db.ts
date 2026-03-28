@@ -22,24 +22,25 @@ let dbPromise: Promise<IDBPDatabase<AeroCheckDB>> | null = null;
 
 export async function getDB(): Promise<IDBPDatabase<AeroCheckDB>> {
   if (!dbPromise) {
-    dbPromise = openDB<AeroCheckDB>('aerocheck-db', 1, {
-      upgrade(db) {
-        const aircraftStore = db.createObjectStore('aircraft', { keyPath: 'id' });
-        aircraftStore.createIndex('by-type', 'type');
-        aircraftStore.createIndex('by-name', 'name');
-        
-        const flightStore = db.createObjectStore('flights', { keyPath: 'id' });
-        flightStore.createIndex('by-aircraft', 'aircraftId');
-        flightStore.createIndex('by-date', 'date');
-        
-        db.createObjectStore('settings', { keyPath: 'id' });
+    dbPromise = openDB<AeroCheckDB>('aerocheck-db', 2, {
+      upgrade(db, oldVersion) {
+        if (oldVersion < 1) {
+          const aircraftStore = db.createObjectStore('aircraft', { keyPath: 'id' });
+          aircraftStore.createIndex('by-type', 'type');
+          aircraftStore.createIndex('by-name', 'name');
+          
+          const flightStore = db.createObjectStore('flights', { keyPath: 'id' });
+          flightStore.createIndex('by-aircraft', 'aircraftId');
+          flightStore.createIndex('by-date', 'date');
+          
+          db.createObjectStore('settings', { keyPath: 'id' });
+        }
       },
     });
   }
   return dbPromise;
 }
 
-// Aircraft operations
 export async function saveAircraft(aircraft: Aircraft): Promise<void> {
   const db = await getDB();
   await db.put('aircraft', aircraft);
@@ -60,7 +61,6 @@ export async function deleteAircraft(id: string): Promise<void> {
   await db.delete('aircraft', id);
 }
 
-// Flight log operations
 export async function saveFlight(flight: FlightLog): Promise<void> {
   const db = await getDB();
   await db.put('flights', flight);
@@ -73,7 +73,8 @@ export async function getFlight(id: string): Promise<FlightLog | undefined> {
 
 export async function getAllFlights(): Promise<FlightLog[]> {
   const db = await getDB();
-  return db.getAll('flights');
+  const flights = await db.getAll('flights');
+  return flights.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
 
 export async function getFlightsByAircraft(aircraftId: string): Promise<FlightLog[]> {
@@ -86,7 +87,6 @@ export async function deleteFlight(id: string): Promise<void> {
   await db.delete('flights', id);
 }
 
-// Settings operations
 export async function saveSettings(settings: AppSettings): Promise<void> {
   const db = await getDB();
   await db.put('settings', { ...settings, id: 'main' } as AppSettings & { id: string });
@@ -98,7 +98,6 @@ export async function getSettings(): Promise<AppSettings | undefined> {
   return settings;
 }
 
-// Export/Import
 export async function exportData(): Promise<string> {
   const db = await getDB();
   const aircraft = await db.getAll('aircraft');

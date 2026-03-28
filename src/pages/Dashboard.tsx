@@ -1,34 +1,161 @@
 import { useEffect, useState } from 'react';
-import { Plane, Wind, Thermometer, Gauge, AlertTriangle, TrendingUp, Clock, MapPin, CloudRain, Navigation } from 'lucide-react';
+import { 
+  Plane, Wind, Thermometer, Droplets, Gauge, Eye, Clock, MapPin, 
+  CloudRain, Navigation, ArrowUp, ArrowDown, Sun, Moon, AlertTriangle,
+  TrendingUp, Calendar, Star, Users, Activity, Zap, CloudLightning,
+  ChevronRight, RefreshCw, Map, BarChart3, Settings, User, LogOut
+} from 'lucide-react';
+import { Link } from 'react-router-dom';
 import OperationsMap from '../components/OperationsMap';
-import { getDefaultWeather, getWeatherIcon, getWindDirectionName } from '../lib/weather';
+import { getDefaultWeather, getWeatherIcon } from '../lib/weather';
 import { getAllAircraft, getAllFlights, getSettings } from '../lib/db';
-import { calculateSuitabilityScore } from '../lib/calculations';
-import { readCachedCurrentLocation, requestCurrentLocation } from '../lib/current-location';
-import { fetchTrafficByCoordinates, type LiveTrafficSnapshot } from '../lib/live-traffic';
 import { fetchLocationBriefing, fetchLocationBriefingByCoordinates, type WeatherBriefing } from '../lib/live-weather';
+import { fetchTrafficByCoordinates, type LiveTrafficSnapshot } from '../lib/live-traffic';
+import { fetch7DayForecast, type WeatherBriefingComplete } from '../lib/forecast-api';
 import type { Aircraft, FlightLog, WeatherConditions } from '../types';
+import { REMARK_LABELS, STATUS_COLORS } from '../types';
+
+function StatCard({ icon: Icon, label, value, subtext, color = 'sky' }: { 
+  icon: any; label: string; value: string | number; subtext?: string; color?: string 
+}) {
+  const colorClasses: Record<string, string> = {
+    sky: 'text-sky-400 bg-sky-500/10',
+    emerald: 'text-emerald-400 bg-emerald-500/10',
+    amber: 'text-amber-400 bg-amber-500/10',
+    red: 'text-red-400 bg-red-500/10',
+    purple: 'text-purple-400 bg-purple-500/10',
+  };
+
+  return (
+    <div className="stat-card">
+      <div className={`w-12 h-12 rounded-xl ${colorClasses[color]} flex items-center justify-center mb-4`}>
+        <Icon className="h-6 w-6" />
+      </div>
+      <div className="text-3xl font-bold text-white">{value}</div>
+      <div className="text-sm text-slate-400 mt-1">{label}</div>
+      {subtext && <div className="text-xs text-slate-500 mt-1">{subtext}</div>}
+    </div>
+  );
+}
+
+function WeatherWidget({ weather, location }: { weather: WeatherConditions; location: string }) {
+  return (
+    <div className="card p-6">
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="text-5xl mb-2">{getWeatherIcon(weather)}</div>
+          <div className="text-4xl font-bold text-white">{weather.temperature}°C</div>
+          <div className="text-slate-400 mt-1">{weather.description}</div>
+        </div>
+        <div className="text-right">
+          <div className="text-sm text-slate-400">{location}</div>
+        </div>
+      </div>
+      
+      <div className="grid grid-cols-4 gap-4 mt-6">
+        <div className="text-center">
+          <Wind className="h-5 w-5 mx-auto text-sky-400 mb-1" />
+          <div className="text-lg font-semibold text-white">{weather.windSpeed}</div>
+          <div className="text-xs text-slate-500">mph wind</div>
+        </div>
+        <div className="text-center">
+          <Droplets className="h-5 w-5 mx-auto text-cyan-400 mb-1" />
+          <div className="text-lg font-semibold text-white">{weather.humidity}%</div>
+          <div className="text-xs text-slate-500">humidity</div>
+        </div>
+        <div className="text-center">
+          <Eye className="h-5 w-5 mx-auto text-emerald-400 mb-1" />
+          <div className="text-lg font-semibold text-white">{weather.visibility}</div>
+          <div className="text-xs text-slate-500">km vis</div>
+        </div>
+        <div className="text-center">
+          <Gauge className="h-5 w-5 mx-auto text-amber-400 mb-1" />
+          <div className="text-lg font-semibold text-white">{weather.pressure}</div>
+          <div className="text-xs text-slate-500">hPa</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RecentFlightCard({ flight }: { flight: FlightLog }) {
+  const statusStyle = STATUS_COLORS[flight.status] || STATUS_COLORS.completed;
+  
+  return (
+    <Link to="/flights" className="flight-log-entry block hover:no-underline">
+      <div className="flex items-start justify-between">
+        <div className="flex-1">
+          <div className="flex items-center gap-3 mb-2">
+            <span className={`px-3 py-1 rounded-full text-xs font-semibold uppercase ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border} border`}>
+              {flight.status}
+            </span>
+            {flight.remarks.slice(0, 2).map((remark, i) => (
+              <span key={i} className="text-xs text-slate-400">
+                {REMARK_LABELS[remark]?.icon} {REMARK_LABELS[remark]?.label}
+              </span>
+            ))}
+          </div>
+          <h3 className="text-lg font-semibold text-white">{flight.aircraftName}</h3>
+          <div className="flex items-center gap-4 mt-2 text-sm text-slate-400">
+            <span className="flex items-center gap-1">
+              <Calendar className="h-4 w-4" />
+              {new Date(flight.date).toLocaleDateString()}
+            </span>
+            <span className="flex items-center gap-1">
+              <Clock className="h-4 w-4" />
+              {flight.duration} min
+            </span>
+            <span className="flex items-center gap-1">
+              <MapPin className="h-4 w-4" />
+              {flight.location}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {[1, 2, 3, 4, 5].map((star) => (
+            <Star
+              key={star}
+              className={`h-4 w-4 ${star <= flight.rating ? 'text-amber-400 fill-amber-400' : 'text-slate-600'}`}
+            />
+          ))}
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function AircraftCard({ aircraft }: { aircraft: Aircraft }) {
+  return (
+    <Link to="/models" className="model-card block hover:no-underline">
+      <div className="flex items-center gap-4">
+        <div className="w-14 h-14 rounded-xl bg-sky-500/10 flex items-center justify-center">
+          <Plane className="h-7 w-7 text-sky-400" />
+        </div>
+        <div className="flex-1">
+          <h3 className="font-semibold text-white">{aircraft.name}</h3>
+          <div className="text-sm text-slate-400 capitalize">{aircraft.type.replace('-', ' ')}</div>
+        </div>
+        <ChevronRight className="h-5 w-5 text-slate-500" />
+      </div>
+    </Link>
+  );
+}
 
 export default function Dashboard() {
   const [weather, setWeather] = useState<WeatherConditions>(getDefaultWeather());
   const [aircraft, setAircraft] = useState<Aircraft[]>([]);
   const [flights, setFlights] = useState<FlightLog[]>([]);
-  const [selectedAircraft, setSelectedAircraft] = useState<Aircraft | null>(null);
   const [briefing, setBriefing] = useState<WeatherBriefing | null>(null);
   const [trafficSnapshot, setTrafficSnapshot] = useState<LiveTrafficSnapshot | null>(null);
-  const [weatherLocation, setWeatherLocation] = useState('Offline demo');
-  const [weatherSource, setWeatherSource] = useState('Open-Meteo');
-  const [weatherDetail, setWeatherDetail] = useState('Global weather grid');
-  const [weatherError, setWeatherError] = useState<string | null>(null);
-  const [weatherLoading, setWeatherLoading] = useState(true);
-  const [locating, setLocating] = useState(false);
-  const [locationAccuracy, setLocationAccuracy] = useState<number | null>(null);
+  const [weatherLocation, setWeatherLocation] = useState('Loading...');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    void loadData();
+    loadDashboardData();
   }, []);
 
-  async function loadData() {
+  async function loadDashboardData() {
+    setLoading(true);
     try {
       const [ac, fl, settings] = await Promise.all([
         getAllAircraft(),
@@ -39,502 +166,224 @@ export default function Dashboard() {
       setAircraft(ac);
       setFlights(fl);
 
-      if (ac.length > 0) {
-        setSelectedAircraft(ac[0]);
+      const locationQuery = settings?.defaultLocation?.trim() || 'New York';
+      
+      try {
+        const briefingData = await fetchLocationBriefing(locationQuery);
+        setBriefing(briefingData);
+        setWeather(briefingData.weather);
+        setWeatherLocation(briefingData.location.name);
+
+        const trafficData = await fetchTrafficByCoordinates(briefingData.location, 100);
+        setTrafficSnapshot(trafficData);
+      } catch (e) {
+        console.log('Using default weather');
       }
-
-      const locationQuery = settings?.defaultLocation?.trim() || 'New York, NY';
-      const cachedLocation = readCachedCurrentLocation();
-
-      if (cachedLocation) {
-        setLocationAccuracy(cachedLocation.accuracy);
-        const loadedFromCache = await loadMissionPictureByCoordinates(cachedLocation.lat, cachedLocation.lon);
-        if (loadedFromCache) {
-          return;
-        }
-      }
-
-      const located = await handleUseCurrentLocation(true);
-      if (!located) {
-        await loadMissionPictureByQuery(locationQuery);
-      }
-    } catch (e) {
-      console.error('Failed to load dashboard data', e);
-      setWeatherLoading(false);
-    }
-  }
-
-  async function syncMissionPicture(nextBriefing: WeatherBriefing) {
-    setBriefing(nextBriefing);
-    setWeather(nextBriefing.weather);
-    setWeatherLocation(nextBriefing.location.name);
-    setWeatherSource(nextBriefing.source);
-    setWeatherDetail(nextBriefing.sourceDetail);
-    setWeatherError(null);
-
-    try {
-      const nextTraffic = await fetchTrafficByCoordinates(nextBriefing.location, 28);
-      setTrafficSnapshot(nextTraffic);
-    } catch (trafficIssue) {
-      console.error('Failed to load nearby airspace', trafficIssue);
-      setTrafficSnapshot(null);
-    }
-  }
-
-  async function loadMissionPictureByQuery(query: string) {
-    setWeatherLoading(true);
-
-    try {
-      const nextBriefing = await fetchLocationBriefing(query);
-      await syncMissionPicture(nextBriefing);
-    } catch (weatherIssue) {
-      console.error('Failed to load live weather', weatherIssue);
-      setWeather(getDefaultWeather());
-      setWeatherLocation('Offline demo');
-      setWeatherSource('Fallback weather');
-      setWeatherDetail('Default briefing values');
-      setWeatherError('Live weather unavailable');
-      setTrafficSnapshot(null);
+    } catch (error) {
+      console.error('Dashboard load error:', error);
     } finally {
-      setWeatherLoading(false);
+      setLoading(false);
     }
   }
 
-  async function loadMissionPictureByCoordinates(lat: number, lon: number) {
-    setWeatherLoading(true);
+  const totalFlightTime = flights.reduce((sum, f) => sum + f.duration, 0);
+  const avgRating = flights.length > 0 
+    ? (flights.reduce((sum, f) => sum + f.rating, 0) / flights.length).toFixed(1)
+    : '0.0';
+  const successfulFlights = flights.filter(f => f.status === 'completed').length;
+  const crashFlights = flights.filter(f => f.status === 'crashed').length;
 
-    try {
-      const nextBriefing = await fetchLocationBriefingByCoordinates(lat, lon);
-      await syncMissionPicture(nextBriefing);
-      return true;
-    } catch (weatherIssue) {
-      console.error('Failed to load current-location weather', weatherIssue);
-      setWeatherError('Current-location weather unavailable');
-      setWeather(getDefaultWeather());
-      setTrafficSnapshot(null);
-      return false;
-    } finally {
-      setWeatherLoading(false);
-    }
-  }
-
-  async function handleUseCurrentLocation(silentOnError = false) {
-    setLocating(true);
-
-    if (!silentOnError) {
-      setWeatherError(null);
-    }
-
-    try {
-      const currentLocation = await requestCurrentLocation();
-      setLocationAccuracy(currentLocation.accuracy);
-      return loadMissionPictureByCoordinates(currentLocation.lat, currentLocation.lon);
-    } catch (locationIssue) {
-      console.error('Dashboard location lookup failed', locationIssue);
-      if (!silentOnError) {
-        setWeatherError(locationIssue instanceof Error ? locationIssue.message : 'Current location unavailable');
-      }
-      return false;
-    } finally {
-      setLocating(false);
-    }
-  }
-
-  const flightScore = selectedAircraft
-    ? calculateSuitabilityScore(selectedAircraft, weather)
-    : null;
-
-  const totalFlightTime = flights.reduce((sum, flight) => sum + flight.duration, 0);
-  const avgRating =
-    flights.length > 0
-      ? (flights.reduce((sum, flight) => sum + flight.rating, 0) / flights.length).toFixed(1)
-      : '0';
-  const trackedTraffic = trafficSnapshot?.flights.length ?? 0;
-  const airborneTraffic = trafficSnapshot?.flights.filter((flight) => !flight.isOnGround).length ?? 0;
+  const recentFlights = flights.slice(0, 3);
+  const topAircraft = aircraft.slice(0, 3);
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <section className="hero-panel px-6 py-7 lg:px-8">
-        <div className="grid gap-6 xl:grid-cols-[0.95fr,1.05fr]">
-          <div>
-            <div className="section-kicker">Mission control</div>
-            <h1 className="mt-3 font-display text-4xl font-semibold uppercase tracking-[0.12em] text-white">
-              Field Overview
-            </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300">
-              Watch the current field picture, your nearby airspace, and the model readiness score from a single operations board that now defaults to your own location.
-            </p>
+    <div className="space-y-8 animate-fade-in">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-white">Mission Control</h1>
+          <p className="text-slate-400 mt-1">Your aviation dashboard overview</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="badge-success flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            Live
+          </span>
+        </div>
+      </div>
 
-            <div className="mt-6 flex flex-wrap gap-2">
-              <span className={`badge ${weatherError ? 'badge-warning' : 'badge-info'}`}>
-                <MapPin className="mr-1 h-3 w-3" />
-                {weatherLoading ? 'Loading weather...' : weatherLocation}
-              </span>
-              <span className="data-chip">{weatherSource}</span>
-              <span className="data-chip">{weatherDetail}</span>
-              <span className="data-chip">{aircraft.length} aircraft profiles</span>
-              {locationAccuracy != null && <span className="data-chip">Accuracy about {locationAccuracy} m</span>}
+      <div className="grid gap-6 lg:grid-cols-4">
+        <StatCard icon={Plane} label="Total Flights" value={flights.length} color="sky" />
+        <StatCard icon={Clock} label="Flight Time" value={`${Math.floor(totalFlightTime / 60)}h ${totalFlightTime % 60}m`} color="emerald" />
+        <StatCard icon={Star} label="Avg Rating" value={avgRating} subtext="out of 5" color="amber" />
+        <StatCard icon={Users} label="Aircraft" value={aircraft.length} subtext="in hangar" color="purple" />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <WeatherWidget weather={weather} location={weatherLocation} />
+        </div>
+        <div className="card p-6">
+          <h3 className="section-title mb-4">Flight Statistics</h3>
+          <div className="space-y-4">
+            <div className="data-row">
+              <span className="data-label">Successful</span>
+              <span className="data-value text-emerald-400">{successfulFlights}</span>
             </div>
-
-            <div className="mt-5 flex flex-col gap-3 md:flex-row">
-              <button className="btn-secondary min-w-[12rem]" onClick={() => void handleUseCurrentLocation()} disabled={locating || weatherLoading}>
-                {locating ? 'Finding position...' : 'Use my location'}
-              </button>
-              <span className="badge-success justify-center">{trackedTraffic} traffic targets in nearby scope</span>
+            <div className="data-row">
+              <span className="data-label">Crashed</span>
+              <span className="data-value text-red-400">{crashFlights}</span>
+            </div>
+            <div className="data-row">
+              <span className="data-label">Success Rate</span>
+              <span className="data-value">
+                {flights.length > 0 ? Math.round((successfulFlights / flights.length) * 100) : 0}%
+              </span>
+            </div>
+            <div className="data-row">
+              <span className="data-label">Best Conditions</span>
+              <span className="data-value text-sky-400">Clear</span>
             </div>
           </div>
+        </div>
+      </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="metric-tile sm:col-span-2">
-              <div className="flex items-center justify-between gap-4">
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <div className="card overflow-hidden">
+            <div className="p-6 border-b border-slate-700">
+              <div className="flex items-center justify-between">
                 <div>
-                  <div className="section-kicker">Current outlook</div>
-                  <div className="mt-3 text-5xl">{getWeatherIcon(weather)}</div>
+                  <h3 className="section-title">Live Flight Map</h3>
+                  <p className="section-subtitle">Real-time aircraft tracking in your area</p>
                 </div>
-                <div className="text-right">
-                  <div className="text-xs uppercase tracking-[0.24em] text-slate-500">{weatherSource}</div>
-                  <div className="mt-2 text-4xl font-bold text-white">{weather.temperature} deg C</div>
-                </div>
+                <Link to="/flights" className="btn-secondary flex items-center gap-2">
+                  <Map className="h-4 w-4" />
+                  Full Map
+                </Link>
               </div>
-              <div className="mt-3 text-sm text-slate-300">{weather.description}</div>
             </div>
-
-            <div className="metric-tile">
-              <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Wind</div>
-              <div className="mt-2 font-mono text-3xl text-white">{weather.windSpeed} mph</div>
-              <div className="mt-1 text-xs text-slate-400">{getWindDirectionName(weather.windDirection)}</div>
-            </div>
-
-            <div className="metric-tile">
-              <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Visibility</div>
-              <div className="mt-2 font-mono text-3xl text-white">{weather.visibility} km</div>
-              <div className="mt-1 text-xs text-slate-400">{airborneTraffic} airborne targets nearby</div>
-            </div>
-
-            <div className="metric-tile">
-              <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Tracked traffic</div>
-              <div className="mt-2 font-mono text-3xl text-white">{trackedTraffic}</div>
-              <div className="mt-1 text-xs text-slate-400">Live ADS-B aircraft</div>
-            </div>
-
-            <div className="metric-tile">
-              <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Models ready</div>
-              <div className="mt-2 font-mono text-3xl text-white">{aircraft.length}</div>
-              <div className="mt-1 text-xs text-slate-400">Saved aircraft profiles</div>
+            <div className="h-[400px]">
+              <OperationsMap
+                center={briefing?.location ?? null}
+                flights={trafficSnapshot?.flights ?? []}
+                radiusNm={100}
+                weatherSummary={{
+                  description: weather.description,
+                  temperature: weather.temperature,
+                  visibility: weather.visibility,
+                  windSpeed: weather.windSpeed,
+                }}
+              />
             </div>
           </div>
         </div>
 
-        <div className="mt-6 grid gap-6 xl:grid-cols-[1.1fr,0.9fr]">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="section-kicker">Current position map</div>
-                <h2 className="mt-2 text-2xl font-semibold text-white">Mission Airspace</h2>
-              </div>
-              <div className="text-right text-xs uppercase tracking-[0.22em] text-slate-500">28 nm tactical scope</div>
+        <div className="space-y-6">
+          <div className="card p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="section-title">Quick Actions</h3>
             </div>
-
-            <OperationsMap
-              center={briefing?.location ?? null}
-              flights={trafficSnapshot?.flights ?? []}
-              radiusNm={28}
-              weatherSummary={{
-                description: weather.description,
-                temperature: weather.temperature,
-                visibility: weather.visibility,
-                windSpeed: weather.windSpeed,
-              }}
-            />
+            <div className="space-y-3">
+              <Link to="/flights" className="btn-primary w-full flex items-center justify-center gap-2">
+                <Plane className="h-4 w-4" />
+                Log New Flight
+              </Link>
+              <Link to="/models" className="btn-secondary w-full flex items-center justify-center gap-2">
+                <Activity className="h-4 w-4" />
+                Add Aircraft
+              </Link>
+              <Link to="/calculator" className="btn-secondary w-full flex items-center justify-center gap-2">
+                <Gauge className="h-4 w-4" />
+                Flight Calculator
+              </Link>
+            </div>
           </div>
 
           <div className="card p-6">
-            <div className="section-kicker">Current outlook</div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <div className="metric-tile">
-                <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Location mode</div>
-                <div className="mt-2 text-lg font-semibold text-white">{locationAccuracy != null ? 'Current position' : 'Saved fallback'}</div>
-              </div>
-              <div className="metric-tile">
-                <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Traffic picture</div>
-                <div className="mt-2 text-lg font-semibold text-white">{trackedTraffic} tracked aircraft</div>
-              </div>
-              <div className="metric-tile">
-                <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Nearest point</div>
-                <div className="mt-2 text-lg font-semibold text-white">{weatherLocation}</div>
-              </div>
-              <div className="metric-tile">
-                <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Observation</div>
-                <div className="mt-2 text-lg font-semibold text-white">{briefing?.observedAt ? new Date(briefing.observedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Live grid'}</div>
-              </div>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="section-title">Your Aircraft</h3>
+              <Link to="/models" className="text-sm text-sky-400 hover:underline">View All</Link>
             </div>
-
-            <div className="mt-5 rounded-[24px] border border-white/10 bg-white/[0.03] p-4 text-sm leading-7 text-slate-300">
-              <div className="flex items-center gap-2 text-sky-200">
-                <Navigation className="h-4 w-4" />
-                {weatherLocation}
-              </div>
-              <p className="mt-3">
-                {weatherLoading ? 'Refreshing live conditions...' : 'Weather and nearby traffic are now tied to the map center instead of a fixed demo city.'}
-              </p>
-              {weatherError && <p className="mt-3 text-amber-300">{weatherError}</p>}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr,1fr]">
-        <div className="card p-6">
-          <div className="mb-6 flex items-center justify-between gap-4">
-            <h2 className="flex items-center gap-2 text-xl font-semibold text-white">
-              <CloudRain className="h-5 w-5 text-sky-400" />
-              Current Weather
-            </h2>
-            <span className="text-4xl">{getWeatherIcon(weather)}</span>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="stat-card">
-              <div className="mb-2 flex items-center gap-2 text-slate-400">
-                <Thermometer className="h-4 w-4" />
-                <span className="text-sm">Temperature</span>
-              </div>
-              <span className="stat-value text-amber-400">{weather.temperature} deg C</span>
-            </div>
-
-            <div className="stat-card">
-              <div className="mb-2 flex items-center gap-2 text-slate-400">
-                <Wind className="h-4 w-4" />
-                <span className="text-sm">Wind Speed</span>
-              </div>
-              <span className="stat-value text-sky-400">{weather.windSpeed} mph</span>
-              <span className="text-xs text-slate-500">{getWindDirectionName(weather.windDirection)}</span>
-            </div>
-
-            <div className="stat-card">
-              <div className="mb-2 flex items-center gap-2 text-slate-400">
-                <Gauge className="h-4 w-4" />
-                <span className="text-sm">Humidity</span>
-              </div>
-              <span className="stat-value text-cyan-400">{weather.humidity}%</span>
-            </div>
-
-            <div className="stat-card">
-              <div className="mb-2 flex items-center gap-2 text-slate-400">
-                <MapPin className="h-4 w-4" />
-                <span className="text-sm">Visibility</span>
-              </div>
-              <span className="stat-value text-green-400">{weather.visibility} km</span>
-            </div>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate-400">
-            <span className="capitalize">{weather.description}</span>
-            <span>{weatherLoading ? 'Refreshing live conditions...' : 'Weather ready for review'}</span>
-            {weatherError && <span className="text-amber-400">{weatherError}</span>}
-          </div>
-        </div>
-
-        <div className="card p-6">
-          <h2 className="mb-6 flex items-center gap-2 text-xl font-semibold text-white">
-            <Gauge className="h-5 w-5 text-sky-400" />
-            Flight Conditions
-          </h2>
-
-          {selectedAircraft ? (
-            <>
-              <div className="mb-6">
-                <label className="label">Select Model</label>
-                <select
-                  className="input"
-                  value={selectedAircraft.id}
-                  onChange={(event) => {
-                    const aircraftMatch = aircraft.find((entry) => entry.id === event.target.value);
-                    setSelectedAircraft(aircraftMatch || null);
-                  }}
-                >
-                  {aircraft.map((entry) => (
-                    <option key={entry.id} value={entry.id}>
-                      {entry.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {flightScore && (
-                <div className="space-y-4">
-                  <div>
-                    <div className="mb-2 flex justify-between text-sm">
-                      <span className="text-slate-400">Suitability Score</span>
-                      <span
-                        className={`font-bold ${
-                          flightScore.suitabilityLevel === 'excellent'
-                            ? 'text-green-400'
-                            : flightScore.suitabilityLevel === 'good'
-                              ? 'text-lime-400'
-                              : flightScore.suitabilityLevel === 'marginal'
-                                ? 'text-amber-400'
-                                : 'text-red-400'
-                        }`}
-                      >
-                        {flightScore.suitabilityScore}/100
-                      </span>
-                    </div>
-                    <div className="gauge">
-                      <div
-                        className={`gauge-fill ${
-                          flightScore.suitabilityLevel === 'excellent'
-                            ? 'bg-green-500'
-                            : flightScore.suitabilityLevel === 'good'
-                              ? 'bg-lime-500'
-                              : flightScore.suitabilityLevel === 'marginal'
-                                ? 'bg-amber-500'
-                                : 'bg-red-500'
-                        }`}
-                        style={{ width: `${flightScore.suitabilityScore}%` }}
-                      />
-                    </div>
-                    <span
-                      className={`text-xs font-medium ${
-                        flightScore.suitabilityLevel === 'excellent'
-                          ? 'text-green-400'
-                          : flightScore.suitabilityLevel === 'good'
-                            ? 'text-lime-400'
-                            : flightScore.suitabilityLevel === 'marginal'
-                              ? 'text-amber-400'
-                              : 'text-red-400'
-                      }`}
-                    >
-                      {flightScore.suitabilityLevel.toUpperCase()} CONDITIONS
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div className="rounded-lg bg-slate-700/50 p-3">
-                      <div className="text-xs text-slate-400">Wing Loading</div>
-                      <div className="font-mono text-lg text-white">{flightScore.wingLoading.toFixed(1)} oz/sq ft</div>
-                    </div>
-                    <div className="rounded-lg bg-slate-700/50 p-3">
-                      <div className="text-xs text-slate-400">Thrust/Weight</div>
-                      <div className="font-mono text-lg text-white">{flightScore.thrustToWeight.toFixed(2)}</div>
-                    </div>
-                    <div className="rounded-lg bg-slate-700/50 p-3">
-                      <div className="text-xs text-slate-400">Est. Speed</div>
-                      <div className="font-mono text-lg text-white">{flightScore.estimatedSpeed.toFixed(0)} mph</div>
-                    </div>
-                    <div className="rounded-lg bg-slate-700/50 p-3">
-                      <div className="text-xs text-slate-400">Flight Time</div>
-                      <div className="font-mono text-lg text-white">{flightScore.flightTime} min</div>
-                    </div>
-                  </div>
-
-                  {flightScore.warnings.length > 0 && (
-                    <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3">
-                      <div className="mb-2 flex items-center gap-2 text-sm font-medium text-amber-400">
-                        <AlertTriangle className="h-4 w-4" />
-                        Warnings
-                      </div>
-                      <ul className="space-y-1 text-xs text-amber-300">
-                        {flightScore.warnings.map((warning, index) => (
-                          <li key={index}>- {warning}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+            <div className="space-y-3">
+              {topAircraft.length > 0 ? topAircraft.map(ac => (
+                <AircraftCard key={ac.id} aircraft={ac} />
+              )) : (
+                <div className="text-center py-8 text-slate-400">
+                  <Plane className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                  <p>No aircraft yet</p>
+                  <Link to="/models" className="text-sky-400 text-sm hover:underline">Add your first model</Link>
                 </div>
               )}
-            </>
-          ) : (
-            <div className="py-12 text-center text-slate-500">
-              <Plane className="mx-auto mb-3 h-12 w-12 opacity-50" />
-              <p>Add a model in the Model Library to check flight conditions</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="card p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h3 className="section-title">Recent Flights</h3>
+            <p className="section-subtitle">Your latest flight logs</p>
+          </div>
+          <Link to="/flights" className="text-sm text-sky-400 hover:underline">View All</Link>
+        </div>
+        <div className="space-y-4">
+          {recentFlights.length > 0 ? recentFlights.map(flight => (
+            <RecentFlightCard key={flight.id} flight={flight} />
+          )) : (
+            <div className="text-center py-12 text-slate-400">
+              <Activity className="h-16 w-16 mx-auto mb-4 opacity-50" />
+              <p className="text-lg">No flights logged yet</p>
+              <p className="text-sm mt-2">Start logging your RC flights to track your progress</p>
+              <Link to="/flights" className="btn-primary mt-4 inline-flex items-center gap-2">
+                <Plane className="h-4 w-4" />
+                Log Your First Flight
+              </Link>
             </div>
           )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="card p-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-500/20">
-              <Plane className="h-5 w-5 text-sky-400" />
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Link to="/weather" className="card p-6 hover:border-sky-500/30 transition-all">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="w-12 h-12 rounded-xl bg-sky-500/10 flex items-center justify-center">
+              <CloudRain className="h-6 w-6 text-sky-400" />
             </div>
             <div>
-              <div className="text-2xl font-bold text-white">{aircraft.length}</div>
-              <div className="text-xs text-slate-400">Total Models</div>
+              <h3 className="font-semibold text-white">Weather Brief</h3>
+              <p className="text-sm text-slate-400">7-day forecast</p>
             </div>
           </div>
-        </div>
+          <p className="text-sm text-slate-400">Check detailed weather conditions and cloud movement for your flying location.</p>
+        </Link>
 
-        <div className="card p-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-500/20">
-              <TrendingUp className="h-5 w-5 text-green-400" />
+        <Link to="/calculator" className="card p-6 hover:border-sky-500/30 transition-all">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+              <Gauge className="h-6 w-6 text-emerald-400" />
             </div>
             <div>
-              <div className="text-2xl font-bold text-white">{flights.length}</div>
-              <div className="text-xs text-slate-400">Total Flights</div>
+              <h3 className="font-semibold text-white">Flight Calculator</h3>
+              <p className="text-sm text-slate-400">Performance analysis</p>
             </div>
           </div>
-        </div>
+          <p className="text-sm text-slate-400">Calculate wing loading, thrust-to-weight ratio, and flight time estimates.</p>
+        </Link>
 
-        <div className="card p-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/20">
-              <Clock className="h-5 w-5 text-amber-400" />
+        <Link to="/analytics" className="card p-6 hover:border-sky-500/30 transition-all">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="w-12 h-12 rounded-xl bg-purple-500/10 flex items-center justify-center">
+              <BarChart3 className="h-6 w-6 text-purple-400" />
             </div>
             <div>
-              <div className="text-2xl font-bold text-white">{totalFlightTime}</div>
-              <div className="text-xs text-slate-400">Flight Minutes</div>
+              <h3 className="font-semibold text-white">Analytics</h3>
+              <p className="text-sm text-slate-400">Performance trends</p>
             </div>
           </div>
-        </div>
-
-        <div className="card p-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-500/20">
-              <Gauge className="h-5 w-5 text-violet-400" />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-white">{avgRating}</div>
-              <div className="text-xs text-slate-400">Avg Rating</div>
-            </div>
-          </div>
-        </div>
+          <p className="text-sm text-slate-400">View detailed statistics, trends, and insights about your flying history.</p>
+        </Link>
       </div>
-
-      {flights.length > 0 && (
-        <div className="card p-6">
-          <h2 className="mb-4 text-xl font-semibold text-white">Recent Flights</h2>
-          <div className="space-y-3">
-            {flights
-              .slice(-5)
-              .reverse()
-              .map((flight) => (
-                <div
-                  key={flight.id}
-                  className="flex flex-col gap-3 rounded-lg bg-slate-700/30 p-3 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-500/20">
-                      <Plane className="h-4 w-4 text-sky-400" />
-                    </div>
-                    <div>
-                      <div className="font-medium text-white">{flight.aircraftName}</div>
-                      <div className="text-xs text-slate-400">
-                        {flight.date} | {flight.location}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-left sm:text-right">
-                    <div className="font-mono text-sky-400">{flight.duration} min</div>
-                    <div className="text-xs text-slate-400">Rating {flight.rating}/5</div>
-                  </div>
-                </div>
-              ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
